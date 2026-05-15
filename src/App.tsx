@@ -25,7 +25,8 @@ import {
   BarChart3,
   FolderOpen,
   Clock,
-  XCircle
+  XCircle,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Module, Item, Contact, Project, Invoice, Document, Supplier, Employee, FinanceProcess, FinanceTask, RiskPreventionRecord } from './types';
@@ -99,11 +100,21 @@ function AppContent() {
     { id: 'library', label: 'Biblioteca', icon: FolderOpen },
   ];
 
-  // Filter items by permission and add admin module if applicable
+  // Filter items by permission
   const finalNavItems = [
-    ...navItems.filter(item => profile?.role === 'admin' || (profile?.permissions?.[item.id] !== false)),
+    ...navItems.filter(item => {
+      // Admins see everything by default, but we can make it more granular if needed.
+      // For now, let's ensure permissions are strictly checked for normal users.
+      if (profile?.role === 'admin') return true;
+      return profile?.permissions?.[item.id] === true;
+    }),
     ...(profile?.role === 'admin' ? [{ id: 'admin_users', label: 'Usuarios', icon: Settings }] : [])
   ];
+
+  const hasPermission = (moduleId: string) => {
+    if (profile?.role === 'admin') return true;
+    return profile?.permissions?.[moduleId] === true;
+  };
 
   if (loading) {
     return (
@@ -292,43 +303,52 @@ function AppContent() {
               transition={{ duration: 0.2 }}
               className="max-w-7xl mx-auto h-full"
             >
-              {activeModule === 'dashboard' && (
+              {activeModule === 'dashboard' && hasPermission('dashboard') && (
                 <DashboardView 
                   onQuickAction={handleQuickAction}
                 />
               )}
-              {activeModule === 'crm' && (
+              {activeModule === 'crm' && hasPermission('crm') && (
                 <CRMView autoOpen={autoOpenModal} onModalHandled={() => setAutoOpenModal(false)} />
               )}
-              {activeModule === 'inventory' && (
+              {activeModule === 'inventory' && hasPermission('inventory') && (
                 <InventoryView autoOpen={autoOpenModal} onModalHandled={() => setAutoOpenModal(false)} />
               )}
-              {activeModule === 'operations' && (
+              {activeModule === 'operations' && hasPermission('operations') && (
                 <OperationsView 
                   autoOpen={autoOpenModal} 
                   onModalHandled={() => setAutoOpenModal(false)} 
                 />
               )}
-              {activeModule === 'finance' && (
+              {activeModule === 'finance' && hasPermission('finance') && (
                 <FinanceView 
                   autoOpen={autoOpenModal} 
                   onModalHandled={() => setAutoOpenModal(false)} 
                 />
               )}
-              {activeModule === 'documents' && (
+              {activeModule === 'documents' && hasPermission('documents') && (
                 <DocumentsView contacts={contacts} />
               )}
-              {activeModule === 'suppliers' && (
+              {activeModule === 'suppliers' && hasPermission('suppliers') && (
                 <SuppliersView />
               )}
-              {activeModule === 'hr' && (
+              {activeModule === 'hr' && hasPermission('hr') && (
                 <HRView />
               )}
-              {activeModule === 'library' && (
+              {activeModule === 'library' && hasPermission('library') && (
                 <LibraryView />
               )}
-              {activeModule === 'admin_users' && (
+              {activeModule === 'admin_users' && profile?.role === 'admin' && (
                 <AdminUsersView />
+              )}
+              
+              {/* Fallback for unauthorized access */}
+              {activeModule !== 'admin_users' && !hasPermission(activeModule) && (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                  <Shield size={48} className="mb-4 opacity-20" />
+                  <p className="font-bold uppercase tracking-widest text-xs">Acceso Restringido</p>
+                  <p className="text-sm mt-1">No tienes permisos para ver este módulo.</p>
+                </div>
               )}
             </motion.div>
           </AnimatePresence>
