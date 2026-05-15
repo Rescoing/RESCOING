@@ -25,7 +25,7 @@ import {
   BarChart3
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Module, Item, Contact, Project, Invoice, Document, Supplier, Employee } from './types';
+import { Module, Item, Contact, Project, Invoice, Document, Supplier, Employee, FinanceProcess, FinanceTask, RiskPreventionRecord } from './types';
 import CRMView from './components/CRMView';
 import InventoryView from './components/InventoryView';
 import OperationsView from './components/OperationsView';
@@ -48,15 +48,87 @@ const initialContacts: Contact[] = [
 ];
 
 const initialProjects: Project[] = [
-  { id: '1', name: 'Automatización Linea 4', location: 'Planta Quilicura', clientResponsible: 'Ing. Rodrigo Díaz', status: 'active', progress: 65, startDate: '10-01-2024', deadline: '20 May 2024', description: 'Renovación de sistema de control hidráulico.' },
-  { id: '2', name: 'Instalación Sensores Planta 1', location: 'Maipú', clientResponsible: 'Ana Ortiz', status: 'delayed', progress: 30, startDate: '12-02-2024', deadline: '15 May 2024', description: 'Implementación de red de sensores IoT.' },
-  { id: '3', name: 'Mantenimiento Preventivo C2', location: 'Calama', clientResponsible: 'Patricio Soto', status: 'completed', progress: 100, startDate: '01-03-2024', deadline: '10 May 2024', description: 'Servicio técnico trimestral de cabezales.' },
+  { 
+    id: '1', 
+    name: 'Automatización Linea 4', 
+    location: 'Planta Quilicura', 
+    clientResponsible: 'Ing. Rodrigo Díaz', 
+    status: 'active', 
+    progress: 75, 
+    startDate: '2024-01-10', 
+    deadline: '2024-05-20', 
+    description: 'Renovación de sistema de control hidráulico.',
+    tasks: [
+      { id: 't1', title: 'Diseño de planos', status: 'completed' },
+      { id: 't2', title: 'Compra de componentes', status: 'completed' },
+      { id: 't3', title: 'Ensamblaje módulo A', status: 'completed' },
+      { id: 't4', title: 'Pruebas de presión', status: 'pending' },
+    ]
+  },
+  { 
+    id: '2', 
+    name: 'Instalación Sensores Planta 1', 
+    location: 'Maipú', 
+    clientResponsible: 'Ana Ortiz', 
+    status: 'delayed', 
+    progress: 33, 
+    startDate: '2024-02-12', 
+    deadline: '2024-05-15', 
+    description: 'Implementación de red de sensores IoT.',
+    tasks: [
+      { id: 't5', title: 'Relevamiento terreno', status: 'completed' },
+      { id: 't6', title: 'Instalación Gateway', status: 'in-progress' },
+      { id: 't7', title: 'Calibración nodos', status: 'pending' },
+    ]
+  },
+  { 
+    id: '3', 
+    name: 'Mantenimiento Preventivo C2', 
+    location: 'Calama', 
+    clientResponsible: 'Patricio Soto', 
+    status: 'completed', 
+    progress: 100, 
+    startDate: '2024-03-01', 
+    deadline: '2024-05-10', 
+    description: 'Servicio técnico trimestral de cabezales.',
+    tasks: [
+      { id: 't8', title: 'Limpieza profunda', status: 'completed' },
+      { id: 't9', title: 'Reemplazo filtros', status: 'completed' },
+    ]
+  },
 ];
 
 const initialInvoices: Invoice[] = [
-  { id: 'INV-2024-001', client: 'TechMining S.A.', status: 'Pagado', date: '10 Mar 2024', netAmount: 10420, iva: 1980, totalAmount: 12400 },
-  { id: 'INV-2024-002', client: 'Obras Civiles', status: 'Pendiente', date: '12 Mar 2024', netAmount: 7521, iva: 1429, totalAmount: 8950 },
-  { id: 'INV-2024-003', client: 'Energía Solar MX', status: 'Vencido', date: '05 Mar 2024', netAmount: 18571, iva: 3529, totalAmount: 22100 },
+  { id: 'INV-2024-001', client: 'TechMining S.A.', status: 'Pagado', date: '10 Mar 2024', netAmount: 10420, iva: 1980, totalAmount: 12400, paymentMethod: 'Transferencia' },
+  { id: 'INV-2024-002', client: 'Obras Civiles', status: 'Pendiente', date: '12 Mar 2024', netAmount: 7521, iva: 1429, totalAmount: 8950, paymentMethod: 'Transferencia' },
+  { id: 'INV-2024-003', client: 'Energía Solar MX', status: 'Vencido', date: '05 Mar 2024', netAmount: 18571, iva: 3529, totalAmount: 22100, paymentMethod: 'Cheque' },
+];
+
+const initialProcesses: FinanceProcess[] = [
+  { 
+    id: 'PRC-001', 
+    clientName: 'Antofagasta Minerals', 
+    projectName: 'Mantención Planta Filtros', 
+    currentStage: 'po_received', 
+    updatedAt: '14/05/2024', 
+    totalValue: 45000,
+    documents: { quotationId: 'Q-2024-992', poId: 'OC-AM-1182', paymentStatusIds: [], invoiceIds: [] }
+  },
+  { 
+    id: 'PRC-002', 
+    clientName: 'BHP Billiton', 
+    projectName: 'Instalación Sensores Proximidad', 
+    currentStage: 'payment_status', 
+    updatedAt: '15/05/2024', 
+    totalValue: 12500,
+    documents: { quotationId: 'Q-2024-995', poId: 'OC-BHP-2201', paymentStatusIds: ['EP-MAR-01', 'EP-ABR-02'], invoiceIds: ['INV-2024-001'] }
+  }
+];
+
+const initialFinanceTasks: FinanceTask[] = [
+  { id: 'T-1', title: 'Cobrar factura vencida #003', date: '16/05/2024', type: 'collection', priority: 'high', status: 'pending', clientName: 'Energía Solar MX' },
+  { id: 'T-2', title: 'Enviar Estado de Pago #2 BHP', date: '17/05/2024', type: 'follow_up', priority: 'medium', status: 'pending', clientName: 'BHP Billiton' },
+  { id: 'T-3', title: 'Recepción OC Antofagasta Minerals', date: '14/05/2024', type: 'follow_up', priority: 'low', status: 'done', clientName: 'Antofagasta Minerals' },
 ];
 
 export default function App() {
@@ -96,6 +168,9 @@ export default function App() {
       ]
     }
   ]);
+  const [riskRecords, setRiskRecords] = useState<RiskPreventionRecord[]>([]);
+  const [financeProcesses, setFinanceProcesses] = useState<FinanceProcess[]>(initialProcesses);
+  const [financeTasks, setFinanceTasks] = useState<FinanceTask[]>(initialFinanceTasks);
   const [autoOpenModal, setAutoOpenModal] = useState(false);
 
   const handleQuickAction = (action: string) => {
@@ -265,10 +340,26 @@ export default function App() {
                 <InventoryView items={items} onAdd={setItems} autoOpen={autoOpenModal} onModalHandled={() => setAutoOpenModal(false)} />
               )}
               {activeModule === 'operations' && (
-                <OperationsView projects={projects} onAdd={setProjects} autoOpen={autoOpenModal} onModalHandled={() => setAutoOpenModal(false)} />
+                <OperationsView 
+                  projects={projects} 
+                  onAdd={setProjects} 
+                  riskRecords={riskRecords}
+                  onUpdateRisk={setRiskRecords}
+                  autoOpen={autoOpenModal} 
+                  onModalHandled={() => setAutoOpenModal(false)} 
+                />
               )}
               {activeModule === 'finance' && (
-                <FinanceView invoices={invoices} onAdd={setInvoices} autoOpen={autoOpenModal} onModalHandled={() => setAutoOpenModal(false)} />
+                <FinanceView 
+                  invoices={invoices} 
+                  onAdd={setInvoices} 
+                  processes={financeProcesses}
+                  onUpdateProcesses={setFinanceProcesses}
+                  tasks={financeTasks}
+                  onUpdateTasks={setFinanceTasks}
+                  autoOpen={autoOpenModal} 
+                  onModalHandled={() => setAutoOpenModal(false)} 
+                />
               )}
               {activeModule === 'documents' && (
                 <DocumentsView documents={documents} onUpdate={setDocuments} contacts={contacts} />

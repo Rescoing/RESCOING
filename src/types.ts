@@ -23,6 +23,23 @@ export interface Contact {
   status: 'customer' | 'opportunity' | 'lead';
 }
 
+export interface ProjectTask {
+  id: string;
+  title: string;
+  description?: string;
+  status: 'pending' | 'in-progress' | 'completed';
+  assignedTo?: string;
+  dueDate?: string;
+}
+
+export interface ProjectDocument {
+  id: string;
+  name: string;
+  type: string;
+  uploadDate: string;
+  size: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -33,6 +50,8 @@ export interface Project {
   startDate: string;
   deadline: string;
   description: string;
+  tasks?: ProjectTask[];
+  documents?: ProjectDocument[];
   ganttData?: any;
 }
 
@@ -46,6 +65,7 @@ export interface Invoice {
   iva: number;
   totalAmount: number;
   siiFolio?: string;
+  paymentMethod?: 'Transferencia' | 'Efectivo' | 'Tarjeta' | 'Cheque';
 }
 
 export interface Document {
@@ -54,14 +74,41 @@ export interface Document {
   folio: string;
   clientId: string;
   clientName: string;
+  projectId?: string;
   date: string;
   netAmount: number;
   iva: number;
   totalAmount: number;
-  status: 'draft' | 'sent' | 'approved' | 'rejected' | 'paid';
+  status: 'draft' | 'sent' | 'approved' | 'rejected' | 'paid' | 'pending';
   paymentMethod?: 'transfer' | 'check' | 'cash' | 'card';
   siiFolio?: string;
   notes?: string;
+}
+
+export interface FinanceTask {
+  id: string;
+  title: string;
+  date: string;
+  type: 'follow_up' | 'collection' | 'payment_reminder';
+  priority: 'low' | 'medium' | 'high';
+  status: 'pending' | 'done';
+  relatedDocId?: string;
+  clientName: string;
+}
+
+export interface FinanceProcess {
+  id: string;
+  clientName: string;
+  projectName?: string;
+  currentStage: 'quotation' | 'po_received' | 'payment_status' | 'invoiced' | 'paid';
+  updatedAt: string;
+  totalValue: number;
+  documents: {
+    quotationId?: string;
+    poId?: string;
+    paymentStatusIds: string[];
+    invoiceIds: string[];
+  };
 }
 
 export interface Supplier {
@@ -132,4 +179,5 @@ export interface RiskPreventionRecord {
   date: string;
   description: string;
   employeeId?: string;
+  projectId?: string;
 }
