@@ -1,18 +1,42 @@
-import { useState, useEffect, Dispatch, SetStateAction, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { Search, Plus, Mail, Phone, ExternalLink } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Contact } from '../types';
 import Modal from './ui/Modal';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from './FirebaseProvider';
 
 interface CRMViewProps {
-  contacts: Contact[];
-  onAdd: Dispatch<SetStateAction<Contact[]>>;
   autoOpen?: boolean;
   onModalHandled?: () => void;
 }
 
-export default function CRMView({ contacts, onAdd, autoOpen, onModalHandled }: CRMViewProps) {
+export default function CRMView({ autoOpen, onModalHandled }: CRMViewProps) {
+  const { user } = useAuth();
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(
+      collection(db, 'contacts'),
+      where('ownerId', '==', user.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Contact[];
+      setContacts(docs);
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, [user]);
 
   useEffect(() => {
     if (autoOpen) {
@@ -36,16 +60,26 @@ export default function CRMView({ contacts, onAdd, autoOpen, onModalHandled }: C
     return `CLI-${String(count).padStart(4, '0')}`;
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const contactToAdd: Contact = {
-      ...newContact as Contact,
-      id: Math.random().toString(36).substr(2, 9),
-      folio: generateFolio()
-    };
-    onAdd(prev => [...prev, contactToAdd]);
-    setIsModalOpen(false);
-    setNewContact({ name: '', company: '', rutEmpresa: '', rutContacto: '', phone: '', address: '', email: '', status: 'lead' });
+    if (!user) return;
+
+    try {
+      const contactToAdd = {
+        ...newContact,
+        ownerId: user.uid,
+        folio: generateFolio(),
+        createdAt: serverTimestamp()
+      };
+      
+      await addDoc(collection(db, 'contacts'), contactToAdd);
+      
+      setIsModalOpen(false);
+      setNewContact({ name: '', company: '', rutEmpresa: '', rutContacto: '', phone: '', address: '', email: '', status: 'lead' });
+    } catch (error) {
+      console.error("Error adding contact:", error);
+      alert("Error al guardar el contacto");
+    }
   };
 
   return (
@@ -169,7 +203,16 @@ export default function CRMView({ contacts, onAdd, autoOpen, onModalHandled }: C
       </Modal>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {contacts.map((contact, i) => (
+        {loading ? (
+          <div className="col-span-full py-20 text-center">
+            <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Cargando Contactos...</p>
+          </div>
+        ) : contacts.length === 0 ? (
+          <div className="col-span-full py-20 text-center bg-white border border-dashed border-slate-200 rounded-2xl">
+            <p className="text-slate-400 text-sm">No hay contactos registrados aún.</p>
+          </div>
+        ) : contacts.map((contact, i) => (
           <motion.div 
             key={contact.id}
             initial={{ opacity: 0, scale: 0.95 }}

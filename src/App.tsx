@@ -34,6 +34,9 @@ import DashboardView from './components/DashboardView';
 import DocumentsView from './components/DocumentsView';
 import SuppliersView from './components/SuppliersView';
 import HRView from './components/HRView';
+import { FirebaseProvider, useAuth } from './components/FirebaseProvider';
+import LoginView from './components/LoginView';
+import SettingsModal from './components/SettingsModal';
 
 const initialItems: Item[] = [
   { id: '1', name: 'Perfil de Alumino 20x20', category: 'Estructural', stock: 150, unit: 'mts', sku: 'ALU-2020-S', minStock: 50 },
@@ -132,8 +135,18 @@ const initialFinanceTasks: FinanceTask[] = [
 ];
 
 export default function App() {
+  return (
+    <FirebaseProvider>
+      <AppContent />
+    </FirebaseProvider>
+  );
+}
+
+function AppContent() {
+  const { user, profile, loading, logout } = useAuth();
   const [activeModule, setActiveModule] = useState<Module>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Global Shared State
   const [items, setItems] = useState<Item[]>(initialItems);
@@ -197,6 +210,21 @@ export default function App() {
     { id: 'hr', label: 'RRHH', icon: UserRound },
   ];
 
+  if (loading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">Cargando ERP...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginView />;
+  }
+
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
       {/* Sidebar */}
@@ -206,14 +234,18 @@ export default function App() {
         className="bg-white border-r border-slate-200 flex flex-col relative z-50 shrink-0"
       >
         <div className="p-6 flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center font-bold text-white shadow-[0_4px_12px_rgba(240,113,6,0.25)] shrink-0 group shadow-lg">
-            <motion.div
-              animate={{ rotate: [0, 90, 180, 270, 360] }}
-              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-              className="flex items-center justify-center"
-            >
-              <Settings size={22} strokeWidth={2.5} />
-            </motion.div>
+          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center font-bold text-white shadow-[0_4px_12px_rgba(240,113,6,0.25)] shrink-0 group shadow-lg overflow-hidden">
+            {profile?.companyLogo ? (
+              <img src={profile.companyLogo} alt="Logo" className="w-full h-full object-cover" />
+            ) : (
+              <motion.div
+                animate={{ rotate: [0, 90, 180, 270, 360] }}
+                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                className="flex items-center justify-center"
+              >
+                <Settings size={22} strokeWidth={2.5} />
+              </motion.div>
+            )}
           </div>
           {isSidebarOpen && (
             <motion.div 
@@ -221,8 +253,10 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               className="flex flex-col"
             >
-              <span className="font-black text-xl tracking-tighter text-slate-900 leading-none">RESCOING</span>
-              <span className="text-[10px] font-black text-primary tracking-[0.15em] uppercase mt-0.5">INGENIERÍA CL</span>
+              <span className="font-black text-xl tracking-tighter text-slate-900 leading-none truncate max-w-[140px]">
+                {profile?.companyName || 'RESCOING'}
+              </span>
+              <span className="text-[10px] font-black text-primary tracking-[0.15em] uppercase mt-0.5">SISTEMA ERP</span>
             </motion.div>
           )}
         </div>
@@ -256,12 +290,14 @@ export default function App() {
 
         <div className="p-6 border-t border-slate-100 flex flex-col gap-1">
           <button 
+            onClick={() => setIsSettingsOpen(true)}
             className="w-full flex items-center gap-3 p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-md transition-colors"
           >
             <Settings size={18} />
             {isSidebarOpen && <span className="font-medium text-sm">Configuración</span>}
           </button>
           <button 
+            onClick={logout}
             className="w-full flex items-center gap-3 p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
           >
             <LogOut size={18} />
@@ -299,12 +335,15 @@ export default function App() {
             </div>
             <div className="flex items-center gap-3 pl-6 border-l border-slate-100">
               <div className="flex flex-col items-end">
-                <span className="text-sm font-bold text-slate-900">Carlos Mendoza</span>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Director</span>
+                <span className="text-sm font-bold text-slate-900">{profile?.displayName || user?.displayName || 'Usuario'}</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{user?.email}</span>
               </div>
-              <div className="w-9 h-9 rounded-full border border-slate-200 bg-slate-100 overflow-hidden ring-2 ring-white">
+              <div 
+                onClick={() => setIsSettingsOpen(true)}
+                className="w-9 h-9 rounded-full border border-slate-200 bg-slate-100 overflow-hidden ring-2 ring-white cursor-pointer hover:ring-primary/50 transition-all"
+              >
                 <img 
-                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&h=100&q=80" 
+                  src={profile?.photoURL || user?.photoURL || "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&h=100&q=80"} 
                   alt="Profile"
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
@@ -327,24 +366,17 @@ export default function App() {
             >
               {activeModule === 'dashboard' && (
                 <DashboardView 
-                  projectsCount={projects.filter(p => p.status === 'active').length}
-                  lowStockCount={items.filter(i => i.stock <= i.minStock).length}
-                  revenue="$124,500.00"
                   onQuickAction={handleQuickAction}
                 />
               )}
               {activeModule === 'crm' && (
-                <CRMView contacts={contacts} onAdd={setContacts} autoOpen={autoOpenModal} onModalHandled={() => setAutoOpenModal(false)} />
+                <CRMView autoOpen={autoOpenModal} onModalHandled={() => setAutoOpenModal(false)} />
               )}
               {activeModule === 'inventory' && (
-                <InventoryView items={items} onAdd={setItems} autoOpen={autoOpenModal} onModalHandled={() => setAutoOpenModal(false)} />
+                <InventoryView autoOpen={autoOpenModal} onModalHandled={() => setAutoOpenModal(false)} />
               )}
               {activeModule === 'operations' && (
                 <OperationsView 
-                  projects={projects} 
-                  onAdd={setProjects} 
-                  riskRecords={riskRecords}
-                  onUpdateRisk={setRiskRecords}
                   autoOpen={autoOpenModal} 
                   onModalHandled={() => setAutoOpenModal(false)} 
                 />
@@ -373,6 +405,8 @@ export default function App() {
             </motion.div>
           </AnimatePresence>
         </div>
+
+        <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       </main>
     </div>
   );

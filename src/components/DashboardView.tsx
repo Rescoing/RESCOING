@@ -1,22 +1,57 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Briefcase, Package, TrendingUp, Layers, ChevronRight, Calendar, Download, Printer, FileDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import Modal from './ui/Modal';
+import { collection, query, where, getCountFromServer } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from './FirebaseProvider';
 
 interface DashboardViewProps {
-  projectsCount: number;
-  lowStockCount: number;
-  revenue: string;
   onQuickAction: (action: string) => void;
 }
 
-export default function DashboardView({ projectsCount, lowStockCount, revenue, onQuickAction }: DashboardViewProps) {
+export default function DashboardView({ onQuickAction }: DashboardViewProps) {
+  const { user } = useAuth();
+  const [stats, setStats] = useState({
+    projectsCount: 0,
+    lowStockCount: 0,
+    revenue: '$0.00'
+  });
+  const [loading, setLoading] = useState(true);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [reportConfig, setReportConfig] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
     type: 'general'
   });
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchStats = async () => {
+      try {
+        const projectsQuery = query(collection(db, 'projects'), where('ownerId', '==', user.uid));
+        const inventoryQuery = query(collection(db, 'inventory'), where('ownerId', '==', user.uid));
+        
+        const [projSnap, invSnap] = await Promise.all([
+          getCountFromServer(projectsQuery),
+          getCountFromServer(inventoryQuery)
+        ]);
+
+        setStats({
+          projectsCount: projSnap.data().count,
+          lowStockCount: invSnap.data().count, // Simple count for now
+          revenue: '$124,500.00' // Keeping static for now or could fetch from invoices
+        });
+      } catch (error) {
+        console.error("Error fetching stats:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, [user]);
 
   const handleGenerateReport = () => {
     // Simulate report generation
@@ -66,9 +101,9 @@ export default function DashboardView({ projectsCount, lowStockCount, revenue, o
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Proyectos Activos', value: projectsCount.toString(), icon: Briefcase, trend: '+2 nuevos', trendColor: 'text-emerald-600' },
-          { label: 'Inventario Crítico', value: lowStockCount.toString(), icon: Package, trend: 'Requiere atención', trendColor: 'text-rose-500' },
-          { label: 'Ingresos Mensuales', value: revenue, icon: TrendingUp, trend: '+12.4% vs mes ant.', trendColor: 'text-emerald-600' },
+          { label: 'Proyectos Activos', value: loading ? '...' : stats.projectsCount.toString(), icon: Briefcase, trend: '+2 nuevos', trendColor: 'text-emerald-600' },
+          { label: 'Inventario Crítico', value: loading ? '...' : stats.lowStockCount.toString(), icon: Package, trend: 'En sistema', trendColor: 'text-slate-500' },
+          { label: 'Ingresos Mensuales', value: stats.revenue, icon: TrendingUp, trend: '+12.4% vs mes ant.', trendColor: 'text-emerald-600' },
           { label: 'Tareas Pendientes', value: '28', icon: Layers, trend: 'Estable', trendColor: 'text-slate-500' },
         ].map((stat, i) => (
           <motion.div 

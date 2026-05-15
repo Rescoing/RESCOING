@@ -1,19 +1,43 @@
-import { useState, useEffect, Dispatch, SetStateAction, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { Search, Plus, Filter, MoreVertical, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Item } from '../types';
 import Modal from './ui/Modal';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from './FirebaseProvider';
 
 interface InventoryViewProps {
-  items: Item[];
-  onAdd: Dispatch<SetStateAction<Item[]>>;
   autoOpen?: boolean;
   onModalHandled?: () => void;
 }
 
-export default function InventoryView({ items, onAdd, autoOpen, onModalHandled }: InventoryViewProps) {
+export default function InventoryView({ autoOpen, onModalHandled }: InventoryViewProps) {
+  const { user } = useAuth();
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(
+      collection(db, 'inventory'),
+      where('ownerId', '==', user.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Item[];
+      setItems(docs);
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, [user]);
 
   useEffect(() => {
     if (autoOpen) {
@@ -35,15 +59,25 @@ export default function InventoryView({ items, onAdd, autoOpen, onModalHandled }
     item.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const itemToAdd: Item = {
-      ...newItem as Item,
-      id: Math.random().toString(36).substr(2, 9)
-    };
-    onAdd(prev => [...prev, itemToAdd]);
-    setIsModalOpen(false);
-    setNewItem({ name: '', sku: '', category: '', stock: 0, minStock: 0, unit: 'pza' });
+    if (!user) return;
+
+    try {
+      const itemToAdd = {
+        ...newItem,
+        ownerId: user.uid,
+        createdAt: serverTimestamp()
+      };
+      
+      await addDoc(collection(db, 'inventory'), itemToAdd);
+      
+      setIsModalOpen(false);
+      setNewItem({ name: '', sku: '', category: '', stock: 0, minStock: 0, unit: 'pza' });
+    } catch (error) {
+      console.error("Error adding item:", error);
+      alert("Error al guardar el artículo");
+    }
   };
 
   return (
@@ -159,7 +193,20 @@ export default function InventoryView({ items, onAdd, autoOpen, onModalHandled }
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredItems.map((item, i) => {
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="p-20 text-center">
+                    <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Cargando Inventario...</p>
+                  </td>
+                </tr>
+              ) : filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-20 text-center">
+                    <p className="text-slate-400 text-sm">No hay artículos que coincidan con la búsqueda.</p>
+                  </td>
+                </tr>
+              ) : filteredItems.map((item, i) => {
                 const isLowStock = item.stock <= item.minStock;
                 return (
                   <motion.tr 

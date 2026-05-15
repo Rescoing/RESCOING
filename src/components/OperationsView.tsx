@@ -1,19 +1,22 @@
-import { useState, useEffect, Dispatch, SetStateAction, FormEvent, useRef } from 'react';
+import { useState, useEffect, FormEvent, useRef } from 'react';
 import { Clock, CheckCircle2, AlertCircle, Plus, Edit2, Trash2, ListChecks, FileText, ShieldAlert, ChevronRight, Save, Flame, HelpCircle, Upload, File, MoreVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Project, ProjectTask, RiskPreventionRecord, ProjectDocument } from '../types';
 import Modal from './ui/Modal';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from './FirebaseProvider';
 
 interface OperationsViewProps {
-  projects: Project[];
-  onAdd: Dispatch<SetStateAction<Project[]>>;
-  riskRecords: RiskPreventionRecord[];
-  onUpdateRisk: Dispatch<SetStateAction<RiskPreventionRecord[]>>;
   autoOpen?: boolean;
   onModalHandled?: () => void;
 }
 
-export default function OperationsView({ projects, onAdd, riskRecords, onUpdateRisk, autoOpen, onModalHandled }: OperationsViewProps) {
+export default function OperationsView({ autoOpen, onModalHandled }: OperationsViewProps) {
+  const { user } = useAuth();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [riskRecords, setRiskRecords] = useState<RiskPreventionRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isRiskModalOpen, setIsRiskModalOpen] = useState(false);
@@ -25,6 +28,28 @@ export default function OperationsView({ projects, onAdd, riskRecords, onUpdateR
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const projectRisks = riskRecords.filter(r => r.projectId === selectedProjectId);
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Listen to Projects
+    const qProjects = query(collection(db, 'projects'), where('ownerId', '==', user.uid));
+    const unsubProjects = onSnapshot(qProjects, (snap) => {
+      setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() } as Project)));
+    });
+
+    // Listen to Risk Records
+    const qRisks = query(collection(db, 'riskRecords'), where('ownerId', '==', user.uid));
+    const unsubRisks = onSnapshot(qRisks, (snap) => {
+      setRiskRecords(snap.docs.map(d => ({ id: d.id, ...d.data() } as RiskPreventionRecord)));
+    });
+
+    setLoading(false);
+    return () => {
+      unsubProjects();
+      unsubRisks();
+    };
+  }, [user]);
 
   useEffect(() => {
     if (autoOpen) {
@@ -82,31 +107,43 @@ export default function OperationsView({ projects, onAdd, riskRecords, onUpdateR
     });
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (editingProject) {
-      onAdd(prev => prev.map(p => p.id === editingProject.id ? { ...p, ...formProject } as Project : p));
-    } else {
-      const projectToAdd: Project = {
-        ...formProject as Project,
-        id: Math.random().toString(36).substr(2, 9),
-        tasks: [],
-        documents: []
-      };
-      onAdd(prev => [...prev, projectToAdd]);
+    if (!user) return;
+
+    try {
+      if (editingProject) {
+        const docRef = doc(db, 'projects', editingProject.id);
+        await updateDoc(docRef, { ...formProject, updatedAt: serverTimestamp() });
+      } else {
+        await addDoc(collection(db, 'projects'), {
+          ...formProject,
+          ownerId: user.uid,
+          tasks: [],
+          documents: [],
+          createdAt: serverTimestamp()
+        });
+      }
+      handleCloseModal();
+    } catch (error) {
+      console.error(error);
+      alert("Error al guardar el proyecto");
     }
-    handleCloseModal();
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('¿Está seguro de eliminar este proyecto?')) {
-      onAdd(prev => prev.filter(p => p.id !== id));
+      try {
+        await deleteDoc(doc(db, 'projects', id));
+      } catch (error) {
+        console.error(error);
+      }
     }
   };
 
-  const handleAddTask = (e: FormEvent) => {
+  const handleAddTask = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedProjectId || !newTask.title) return;
+    if (!selectedProjectId || !newTask.title || !user) return;
 
     const taskToAdd: ProjectTask = {
       id: Math.random().toString(36).substr(2, 9),
@@ -116,58 +153,58 @@ export default function OperationsView({ projects, onAdd, riskRecords, onUpdateR
       dueDate: newTask.dueDate
     };
 
-    onAdd(prev => prev.map(p => 
-      p.id === selectedProjectId 
-        ? { ...p, tasks: [...(p.tasks || []), taskToAdd] } 
-        : p
-    ));
+    const projectRef = doc(db, 'projects', selectedProjectId);
+    const updatedTasks = [...(selectedProject?.tasks || []), taskToAdd];
+    await updateDoc(projectRef, { tasks: updatedTasks });
 
     setNewTask({ title: '', description: '', status: 'pending', dueDate: '' });
   };
 
-  const toggleTaskStatus = (projectId: string, taskId: string) => {
-    onAdd(prev => prev.map(p => {
-      if (p.id !== projectId) return p;
-      const updatedTasks = (p.tasks || []).map(t => {
-        if (t.id !== taskId) return t;
-        const nextStatus: ProjectTask['status'] = 
-          t.status === 'pending' ? 'in-progress' : 
-          t.status === 'in-progress' ? 'completed' : 'pending';
-        return { ...t, status: nextStatus };
-      });
-      
-      const completedCount = updatedTasks.filter(t => t.status === 'completed').length;
-      const progress = updatedTasks.length > 0 ? Math.round((completedCount / updatedTasks.length) * 100) : p.progress;
-      
-      return { ...p, tasks: updatedTasks, progress };
-    }));
+  const toggleTaskStatus = async (projectId: string, taskId: string) => {
+    const p = projects.find(proj => proj.id === projectId);
+    if (!p) return;
+
+    const updatedTasks = (p.tasks || []).map(t => {
+      if (t.id !== taskId) return t;
+      const nextStatus: ProjectTask['status'] = 
+        t.status === 'pending' ? 'in-progress' : 
+        t.status === 'in-progress' ? 'completed' : 'pending';
+      return { ...t, status: nextStatus };
+    });
+    
+    const completedCount = updatedTasks.filter(t => t.status === 'completed').length;
+    const progress = updatedTasks.length > 0 ? Math.round((completedCount / updatedTasks.length) * 100) : p.progress;
+    
+    const projectRef = doc(db, 'projects', projectId);
+    await updateDoc(projectRef, { tasks: updatedTasks, progress });
   };
 
-  const deleteTask = (projectId: string, taskId: string) => {
-    onAdd(prev => prev.map(p => 
-      p.id === projectId 
-        ? { ...p, tasks: (p.tasks || []).filter(t => t.id !== taskId) } 
-        : p
-    ));
+  const deleteTask = async (projectId: string, taskId: string) => {
+    const p = projects.find(proj => proj.id === projectId);
+    if (!p) return;
+    const updatedTasks = (p.tasks || []).filter(t => t.id !== taskId);
+    const projectRef = doc(db, 'projects', projectId);
+    await updateDoc(projectRef, { tasks: updatedTasks });
   };
 
-  const handleAddRisk = (e: FormEvent) => {
+  const handleAddRisk = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedProjectId || !newRisk.description) return;
+    if (!selectedProjectId || !newRisk.description || !user) return;
 
-    const riskToAdd: RiskPreventionRecord = {
-      id: Math.random().toString(36).substr(2, 9),
+    const riskToAdd = {
       type: newRisk.type as any,
       description: newRisk.description,
       date: newRisk.date || new Date().toISOString().split('T')[0],
-      projectId: selectedProjectId
+      projectId: selectedProjectId,
+      ownerId: user.uid,
+      createdAt: serverTimestamp()
     };
 
-    onUpdateRisk(prev => [...prev, riskToAdd]);
+    await addDoc(collection(db, 'riskRecords'), riskToAdd);
     setNewRisk({ type: 'talk', description: '', date: new Date().toISOString().split('T')[0] });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedProjectId) return;
 
@@ -179,11 +216,9 @@ export default function OperationsView({ projects, onAdd, riskRecords, onUpdateR
       size: (file.size / (1024 * 1024)).toFixed(2) + ' MB'
     };
 
-    onAdd(prev => prev.map(p => 
-      p.id === selectedProjectId 
-        ? { ...p, documents: [...(p.documents || []), newDoc] } 
-        : p
-    ));
+    const projectRef = doc(db, 'projects', selectedProjectId);
+    const updatedDocs = [...(selectedProject?.documents || []), newDoc];
+    await updateDoc(projectRef, { documents: updatedDocs });
   };
 
   return (
@@ -502,7 +537,12 @@ export default function OperationsView({ projects, onAdd, riskRecords, onUpdateR
       </Modal>
 
       <div className="grid grid-cols-1 gap-6">
-        {projects.map((project, i) => (
+        {loading ? (
+          <div className="col-span-full py-20 text-center bg-white rounded-2xl border border-slate-200">
+            <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Cargando Proyectos...</p>
+          </div>
+        ) : projects.map((project, i) => (
           <motion.div 
             key={project.id}
             initial={{ opacity: 0, x: -20 }}

@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      // NOTE: Normally we use email_verified == true, but for popups and dev, we may lax this if needed.
+      // However, the instructions mandate it.
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    // --- User Profiles & Company Settings ---
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) 
+        && isValidUserProfile(incoming())
+        && incoming().uid == userId
+        && incoming().email == request.auth.token.email;
+      allow update: if isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'photoURL', 'companyName', 'companyRut', 
+          'companyAddress', 'companyPhone', 'companyLogo', 
+          'companyEmail', 'companyWebsite', 'updatedAt'
+        ]);
+    }
+
+    function isValidUserProfile(data) {
+      return data.uid is string && data.uid.size() <= 128
+        && data.email is string && data.email.size() <= 256
+        && (data.get('displayName', '') is string && data.get('displayName', '').size() <= 256)
+        && (data.get('companyName', '') is string && data.get('companyName', '').size() <= 256)
+        && (data.get('companyRut', '') is string && data.get('companyRut', '').size() <= 20)
+        && (data.get('companyAddress', '') is string && data.get('companyAddress', '').size() <= 500)
+        && (data.get('companyPhone', '') is string && data.get('companyPhone', '').size() <= 50)
+        && (data.get('companyLogo', '') is string && data.get('companyLogo', '').size() <= 2000)
+        && (data.get('companyEmail', '') is string && data.get('companyEmail', '').size() <= 256)
+        && (data.get('companyWebsite', '') is string && data.get('companyWebsite', '').size() <= 500)
+        && (data.get('updatedAt', '') is string)
+        && data.keys().hasAll(['uid', 'email']) && data.keys().size() <= 13;
+    }
+
+    // --- CRM Contacts ---
+    match /contacts/{contactId} {
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow get: if isOwner(resource.data.ownerId) && isValidId(contactId);
+      allow create: if isOwner(incoming().ownerId)
+        && isValidContact(incoming())
+        && isValidId(contactId);
+      allow update: if isOwner(existing().ownerId)
+        && incoming().ownerId == existing().ownerId
+        && isValidContact(incoming())
+        && isValidId(contactId);
+      allow delete: if isOwner(existing().ownerId);
+    }
+
+    function isValidContact(data) {
+      return data.ownerId == request.auth.uid
+        && data.name is string && data.name.size() <= 256
+        && data.keys().hasAll(['ownerId', 'name']) && data.keys().size() <= 20;
+    }
+
+    // --- Projects ---
+    match /projects/{projectId} {
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow get: if isOwner(resource.data.ownerId) && isValidId(projectId);
+      allow create: if isOwner(incoming().ownerId)
+        && isValidProject(incoming())
+        && isValidId(projectId);
+      allow update: if isOwner(existing().ownerId)
+        && incoming().ownerId == existing().ownerId
+        && isValidProject(incoming())
+        && isValidId(projectId);
+      allow delete: if isOwner(existing().ownerId);
+    }
+
+    function isValidProject(data) {
+      return data.ownerId == request.auth.uid
+        && data.name is string && data.name.size() <= 256
+        && data.keys().hasAll(['ownerId', 'name']) && data.keys().size() <= 20;
+    }
+  }
+}
