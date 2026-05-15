@@ -22,7 +22,8 @@ import {
   FileCheck,
   ShoppingCart,
   Ticket,
-  BarChart3
+  BarChart3,
+  FolderOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Module, Item, Contact, Project, Invoice, Document, Supplier, Employee, FinanceProcess, FinanceTask, RiskPreventionRecord } from './types';
@@ -34,6 +35,7 @@ import DashboardView from './components/DashboardView';
 import DocumentsView from './components/DocumentsView';
 import SuppliersView from './components/SuppliersView';
 import HRView from './components/HRView';
+import LibraryView from './components/LibraryView';
 import { FirebaseProvider, useAuth } from './components/FirebaseProvider';
 import LoginView from './components/LoginView';
 import SettingsModal from './components/SettingsModal';
@@ -89,6 +91,7 @@ function AppContent() {
     { id: 'documents', label: 'Documentos', icon: FileText },
     { id: 'suppliers', label: 'Proveedores', icon: Truck },
     { id: 'hr', label: 'RRHH', icon: UserRound },
+    { id: 'library', label: 'Biblioteca', icon: FolderOpen },
   ];
 
   if (loading) {
@@ -276,6 +279,9 @@ function AppContent() {
               )}
               {activeModule === 'hr' && (
                 <HRView />
+              )}
+              {activeModule === 'library' && (
+                <LibraryView />
               )}
             </motion.div>
           </AnimatePresence>

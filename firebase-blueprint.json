@@ -146,6 +146,33 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "type", "folio"]
+    },
+    "LibraryItem": {
+      "title": "Library Item",
+      "description": "Stored file in the library",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "name": { "type": "string" },
+        "docType": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "fileData": { "type": "string", "description": "Base64 or URL" },
+        "folio": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "docType", "fileName", "folio"]
+    },
+    "FolioCounter": {
+      "title": "Folio Counter",
+      "description": "Counter for document folios",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "docType": { "type": "string" },
+        "lastFolio": { "type": "number" }
+      },
+      "required": ["ownerId", "docType", "lastFolio"]
     }
   },
   "firestore": {
@@ -192,6 +219,14 @@
     "/documents/{docId}": {
       "schema": "Document",
       "description": "Business Documents"
+    },
+    "/library/{itemId}": {
+      "schema": "LibraryItem",
+      "description": "Digital library files"
+    },
+    "/folioCounters/{counterId}": {
+      "schema": "FolioCounter",
+      "description": "Counters for sequential folios"
     }
   }
 }
