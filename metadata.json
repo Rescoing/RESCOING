@@ -1,0 +1,8 @@
+{
+  "name": "RESCOING ERP",
+  "description": "Sistema de gestión integral para ingeniería industrial con módulos de inventario, CRM, operaciones y finanzas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
