@@ -50,14 +50,17 @@ service cloud.firestore {
     // --- User Profiles & Company Settings ---
     match /users/{userId} {
       allow list: if isAdmin();
-      allow get: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) 
-        && isValidUserProfile(incoming())
-        && incoming().uid == userId
-        && incoming().email == request.auth.token.email
-        // First user or specific email can be admin, others start as user/pending
-        && (incoming().role == 'user' || request.auth.token.email == 'rescoing@gmail.com')
-        && (incoming().accessStatus == 'pending' || request.auth.token.email == 'rescoing@gmail.com');
+      allow get: if isOwner(userId) || isAdmin() || userId == 'invite_' + request.auth.token.email;
+      allow delete: if isAdmin() || userId == 'invite_' + request.auth.token.email;
+      allow create: if (
+        (isOwner(userId) 
+          && incoming().uid == userId
+          && incoming().email == request.auth.token.email
+          // First user or specific email can be admin, others start as user/pending
+          && (incoming().role == 'user' || request.auth.token.email == 'rescoing@gmail.com')
+          && (incoming().accessStatus == 'pending' || request.auth.token.email == 'rescoing@gmail.com')
+        ) || isAdmin()
+      ) && isValidUserProfile(incoming());
       
       allow update: if (isOwner(userId) || isAdmin())
         && isValidUserProfile(incoming())

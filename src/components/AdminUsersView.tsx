@@ -7,9 +7,10 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   collection, query, onSnapshot, updateDoc, 
-  doc, orderBy
+  doc, orderBy, where, getDocs, setDoc
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { useAuth } from './FirebaseProvider';
 import Modal from './ui/Modal';
 
 interface UserProfile {
@@ -44,6 +45,13 @@ export default function AdminUsersView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newUser, setNewUser] = useState({
+    email: '',
+    role: 'user' as const,
+    accessStatus: 'approved' as const,
+    permissions: MODULES.reduce((acc, m) => ({ ...acc, [m.id]: false }), {})
+  });
 
   useEffect(() => {
     if (profile?.role !== 'admin') {
@@ -70,6 +78,41 @@ export default function AdminUsersView() {
 
     return () => unsubscribe();
   }, []);
+
+  const handleCreateUser = async () => {
+    if (!newUser.email) return;
+    try {
+      // We use a query to check if email already exists
+      const q = query(collection(db, 'users'), where('email', '==', newUser.email.toLowerCase()));
+      const snap = await getDocs(q);
+      
+      if (!snap.empty) {
+        alert("Este correo ya está registrado.");
+        return;
+      }
+
+      // Create a document with a predictable ID based on email for invitation logic
+      const invitationId = `invite_${newUser.email.toLowerCase()}`;
+      await setDoc(doc(db, 'users', invitationId), {
+        ...newUser,
+        email: newUser.email.toLowerCase(),
+        displayName: 'Usuario Invitado',
+        photoURL: '',
+        uid: invitationId, // Temporary ID
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      setIsAddModalOpen(false);
+      setNewUser({
+        email: '',
+        role: 'user',
+        accessStatus: 'approved',
+        permissions: MODULES.reduce((acc, m) => ({ ...acc, [m.id]: false }), {})
+      });
+    } catch (error) {
+      console.error("Error creating invitation:", error);
+    }
+  };
 
   const handleUpdateUser = async (uid: string, data: Partial<UserProfile>) => {
     try {
@@ -113,6 +156,15 @@ export default function AdminUsersView() {
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Gestión de Usuarios</h2>
           <p className="text-slate-500">Administra accesos, roles y permisos del sistema</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-all font-medium shadow-sm w-fit"
+          >
+            <Users size={20} />
+            <span>Agregar Usuario</span>
+          </button>
         </div>
       </div>
 
@@ -282,6 +334,87 @@ export default function AdminUsersView() {
               className="px-6 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium"
             >
               Cerrar
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add User Modal */}
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        title="Invitar Nuevo Usuario"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico</label>
+            <input
+              type="email"
+              value={newUser.email}
+              onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
+              placeholder="correo@ejemplo.com"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
+              <select
+                value={newUser.role}
+                onChange={(e) => setNewUser(p => ({ ...p, role: e.target.value as any }))}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="user">Usuario</option>
+                <option value="admin">Administrador</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Estado Acceso</label>
+              <select
+                value={newUser.accessStatus}
+                onChange={(e) => setNewUser(p => ({ ...p, accessStatus: e.target.value as any }))}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="approved">Aprobado</option>
+                <option value="pending">Pendiente</option>
+                <option value="denied">Denegado</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Permisos de Módulos</label>
+            <div className="grid grid-cols-2 gap-2">
+              {MODULES.map(module => (
+                <button
+                  key={module.id}
+                  type="button"
+                  onClick={() => setNewUser(p => ({
+                    ...p,
+                    permissions: { ...p.permissions, [module.id]: !p.permissions[module.id] }
+                  }))}
+                  className={`px-3 py-2 rounded-lg border text-xs text-left flex items-center justify-between transition-all ${newUser.permissions[module.id] ? 'bg-primary/5 border-primary/20 text-primary font-bold' : 'bg-slate-50 border-slate-200 text-slate-500'}`}
+                >
+                  {module.label}
+                  {newUser.permissions[module.id] && <CheckCircle size={14} />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              onClick={() => setIsAddModalOpen(false)}
+              className="px-4 py-2 text-slate-600 hover:bg-slate-50 rounded-lg"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleCreateUser}
+              className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all font-bold"
+            >
+              Invitar Usuario
             </button>
           </div>
         </div>

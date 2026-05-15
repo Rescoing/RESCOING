@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, Upload, Download, Eye, Trash2, Search, 
   Filter, Plus, File, Image as ImageIcon, FileCode,

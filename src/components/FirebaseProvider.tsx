@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, query, collection, where, getDocs, deleteDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
 interface UserProfile {
@@ -75,28 +75,68 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         }
         setLoading(false);
       } else {
-        // Create initial profile
-        const isDefaultAdmin = user.email === 'rescoing@gmail.com';
-        const initialProfile: UserProfile = {
-          uid: user.uid,
-          email: user.email || '',
-          displayName: user.displayName || '',
-          photoURL: user.photoURL || '',
-          role: isDefaultAdmin ? 'admin' : 'user',
-          accessStatus: isDefaultAdmin ? 'approved' : 'pending',
-          permissions: {
-            dashboard: true,
-            crm: isDefaultAdmin,
-            inventory: isDefaultAdmin,
-            operations: isDefaultAdmin,
-            finance: isDefaultAdmin,
-            documents: isDefaultAdmin,
-            suppliers: isDefaultAdmin,
-            hr: isDefaultAdmin,
-            library: isDefaultAdmin,
-          },
-          updatedAt: new Date().toISOString()
-        };
+        // Check for an invitation for this email using predictable ID
+        const invitationId = `invite_${user.email?.toLowerCase()}`;
+        const inviteDocRef = doc(db, 'users', invitationId);
+        
+        let initialProfile: UserProfile;
+
+        try {
+          // Use getDoc instead of getDocs to avoid list permission issues
+          const inviteDocSnap = await getDoc(inviteDocRef);
+          
+          if (inviteDocSnap.exists()) {
+            const inviteData = inviteDocSnap.data() as UserProfile;
+            initialProfile = {
+              ...inviteData,
+              uid: user.uid,
+              displayName: user.displayName || inviteData.displayName || 'Usuario',
+              photoURL: user.photoURL || inviteData.photoURL || '',
+              updatedAt: new Date().toISOString()
+            };
+            
+            // Delete the invitation document
+            await deleteDoc(inviteDocRef);
+          } else {
+            // Create initial profile
+            const isDefaultAdmin = user.email === 'rescoing@gmail.com';
+            initialProfile = {
+              uid: user.uid,
+              email: user.email || '',
+              displayName: user.displayName || '',
+              photoURL: user.photoURL || '',
+              role: isDefaultAdmin ? 'admin' : 'user',
+              accessStatus: isDefaultAdmin ? 'approved' : 'pending',
+              permissions: {
+                dashboard: true,
+                crm: isDefaultAdmin,
+                inventory: isDefaultAdmin,
+                operations: isDefaultAdmin,
+                finance: isDefaultAdmin,
+                documents: isDefaultAdmin,
+                suppliers: isDefaultAdmin,
+                hr: isDefaultAdmin,
+                library: isDefaultAdmin,
+              },
+              updatedAt: new Date().toISOString()
+            };
+          }
+        } catch (error) {
+          console.error("Error checking invitation:", error);
+          // Fallback to default
+          const isDefaultAdmin = user.email === 'rescoing@gmail.com';
+          initialProfile = {
+            uid: user.uid,
+            email: user.email || '',
+            displayName: user.displayName || '',
+            photoURL: user.photoURL || '',
+            role: isDefaultAdmin ? 'admin' : 'user',
+            accessStatus: isDefaultAdmin ? 'approved' : 'pending',
+            permissions: { dashboard: true },
+            updatedAt: new Date().toISOString()
+          };
+        }
+
         try {
           await setDoc(docRef, initialProfile, { merge: true });
           setProfile(initialProfile);
