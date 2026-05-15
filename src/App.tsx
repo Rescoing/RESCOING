@@ -189,7 +189,7 @@ function AppContent() {
           )}
         </div>
 
-        <nav className="flex-1 px-4 space-y-1 mt-4">
+        <nav className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto custom-scrollbar">
           <p className={`text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 px-2 ${!isSidebarOpen && 'text-center'}`}>
             {isSidebarOpen ? 'Menu Principal' : '...'}
           </p>

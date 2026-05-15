@@ -56,9 +56,11 @@ service cloud.firestore {
         (isOwner(userId) 
           && incoming().uid == userId
           && incoming().email == request.auth.token.email
-          // First user or specific email can be admin, others start as user/pending
-          && (incoming().role == 'user' || request.auth.token.email == 'rescoing@gmail.com')
-          && (incoming().accessStatus == 'pending' || request.auth.token.email == 'rescoing@gmail.com')
+          && (
+            request.auth.token.email == 'rescoing@gmail.com' ||
+            exists(/databases/$(database)/documents/users/invite_ + request.auth.token.email) ||
+            (incoming().role == 'user' && incoming().accessStatus == 'pending')
+          )
         ) || isAdmin()
       ) && isValidUserProfile(incoming());
       

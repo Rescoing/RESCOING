@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { 
+  onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile as updateAuthProfile
+} from 'firebase/auth';
 import { doc, onSnapshot, setDoc, query, collection, where, getDocs, deleteDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
@@ -28,6 +31,8 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   login: () => Promise<void>;
+  loginWithEmail: (email: string, pass: string) => Promise<void>;
+  registerWithEmail: (email: string, pass: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
 }
@@ -94,9 +99,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               photoURL: user.photoURL || inviteData.photoURL || '',
               updatedAt: new Date().toISOString()
             };
-            
-            // Delete the invitation document
-            await deleteDoc(inviteDocRef);
           } else {
             // Create initial profile
             const isDefaultAdmin = user.email === 'rescoing@gmail.com';
@@ -141,6 +143,14 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           await setDoc(docRef, initialProfile, { merge: true });
           setProfile(initialProfile);
           setLoading(false);
+          
+          // Delete the invitation document if it was used
+          const invitationId = `invite_${user.email?.toLowerCase()}`;
+          const inviteDocRef = doc(db, 'users', invitationId);
+          const inviteDocSnap = await getDoc(inviteDocRef);
+          if (inviteDocSnap.exists()) {
+             await deleteDoc(inviteDocRef);
+          }
         } catch (error) {
           console.error("Error creating profile:", error);
           setLoading(false);
@@ -159,6 +169,15 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     await signInWithPopup(auth, provider);
   };
 
+  const loginWithEmail = async (email: string, pass: string) => {
+    await signInWithEmailAndPassword(auth, email, pass);
+  };
+
+  const registerWithEmail = async (email: string, pass: string, name: string) => {
+    const { user: newUser } = await createUserWithEmailAndPassword(auth, email, pass);
+    await updateAuthProfile(newUser, { displayName: name });
+  };
+
   const logout = async () => {
     await signOut(auth);
   };
@@ -170,7 +189,11 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, logout, updateProfile }}>
+    <AuthContext.Provider value={{ 
+      user, profile, loading, login, 
+      loginWithEmail, registerWithEmail, 
+      logout, updateProfile 
+    }}>
       {children}
     </AuthContext.Provider>
   );
