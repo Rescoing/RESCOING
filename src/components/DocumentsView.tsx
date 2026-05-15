@@ -19,12 +19,9 @@ import {
 import { motion } from 'motion/react';
 import { Document, Contact } from '../types';
 import Modal from './ui/Modal';
-
-interface DocumentsViewProps {
-  documents: Document[];
-  onUpdate: Dispatch<SetStateAction<Document[]>>;
-  contacts: Contact[];
-}
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from './FirebaseProvider';
 
 const DOCUMENT_TYPES = [
   { id: 'quotation', label: 'Cotización', icon: FileText, prefix: 'COT' },
@@ -34,11 +31,26 @@ const DOCUMENT_TYPES = [
   { id: 'payment_status', label: 'Estado de Pago', icon: CheckCircle2, prefix: 'EP' },
 ];
 
-export default function DocumentsView({ documents, onUpdate, contacts }: DocumentsViewProps) {
+export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
+  const { user } = useAuth();
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Document['type']>('quotation');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [rutLookup, setRutLookup] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(collection(db, 'documents'), where('ownerId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setDocuments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Document)));
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, [user]);
 
   const [newDoc, setNewDoc] = useState<Partial<Document>>({
     clientId: '',
@@ -82,26 +94,32 @@ export default function DocumentsView({ documents, onUpdate, contacts }: Documen
     return `${typeInfo?.prefix}-${String(count).padStart(4, '0')}`;
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const docToAdd: Document = {
-      id: Math.random().toString(36).substr(2, 9),
-      type: activeTab,
-      folio: generateFolio(activeTab),
-      clientId: newDoc.clientId || '',
-      clientName: newDoc.clientName || '',
-      date: new Date().toLocaleDateString('es-ES'),
-      netAmount: newDoc.netAmount || 0,
-      iva: newDoc.iva || 0,
-      totalAmount: newDoc.totalAmount || 0,
-      status: activeTab === 'payment_status' ? 'paid' : 'draft',
-      paymentMethod: newDoc.paymentMethod,
-      siiFolio: newDoc.siiFolio,
-      notes: newDoc.notes
-    };
-    onUpdate(prev => [docToAdd, ...prev]);
-    setIsModalOpen(false);
-    resetForm();
+    if (!user) return;
+
+    try {
+      await addDoc(collection(db, 'documents'), {
+        type: activeTab,
+        folio: generateFolio(activeTab),
+        clientId: newDoc.clientId || '',
+        clientName: newDoc.clientName || '',
+        date: new Date().toLocaleDateString('es-ES'),
+        netAmount: newDoc.netAmount || 0,
+        iva: newDoc.iva || 0,
+        totalAmount: newDoc.totalAmount || 0,
+        status: activeTab === 'payment_status' ? 'paid' : 'draft',
+        paymentMethod: newDoc.paymentMethod || 'transfer',
+        siiFolio: newDoc.siiFolio || '',
+        notes: newDoc.notes || '',
+        ownerId: user.uid,
+        createdAt: serverTimestamp()
+      });
+      setIsModalOpen(false);
+      resetForm();
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const resetForm = () => {

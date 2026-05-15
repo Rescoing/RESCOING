@@ -1,4 +1,4 @@
-import { useState, Dispatch, SetStateAction, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { 
   Truck, 
   Plus, 
@@ -14,15 +14,29 @@ import {
 import { motion } from 'motion/react';
 import { Supplier } from '../types';
 import Modal from './ui/Modal';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from './FirebaseProvider';
 
-interface SuppliersViewProps {
-  suppliers: Supplier[];
-  onUpdate: Dispatch<SetStateAction<Supplier[]>>;
-}
-
-export default function SuppliersView({ suppliers, onUpdate }: SuppliersViewProps) {
+export default function SuppliersView() {
+  const { user } = useAuth();
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(collection(db, 'suppliers'), where('ownerId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setSuppliers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Supplier)));
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, [user]);
+
   const [newSupplier, setNewSupplier] = useState<Partial<Supplier>>({
     name: '',
     rutEmpresa: '',
@@ -35,15 +49,21 @@ export default function SuppliersView({ suppliers, onUpdate }: SuppliersViewProp
     rating: 5
   });
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const supplierToAdd: Supplier = {
-      ...newSupplier as Supplier,
-      id: Math.random().toString(36).substr(2, 9)
-    };
-    onUpdate(prev => [supplierToAdd, ...prev]);
-    setIsModalOpen(false);
-    setNewSupplier({ name: '', rutEmpresa: '', address: '', website: '', contactName: '', phone: '', email: '', category: '', rating: 5 });
+    if (!user) return;
+
+    try {
+      await addDoc(collection(db, 'suppliers'), {
+        ...newSupplier,
+        ownerId: user.uid,
+        createdAt: serverTimestamp()
+      });
+      setIsModalOpen(false);
+      setNewSupplier({ name: '', rutEmpresa: '', address: '', website: '', contactName: '', phone: '', email: '', category: '', rating: 5 });
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const filteredSuppliers = suppliers.filter(s => 

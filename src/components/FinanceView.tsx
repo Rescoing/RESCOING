@@ -1,4 +1,4 @@
-import { useState, useEffect, Dispatch, SetStateAction, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { 
   ArrowUpRight, 
   ArrowDownLeft, 
@@ -25,30 +25,22 @@ import Modal from './ui/Modal';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
-
-interface FinanceViewProps {
-  invoices: Invoice[];
-  onAdd: Dispatch<SetStateAction<Invoice[]>>;
-  processes: FinanceProcess[];
-  onUpdateProcesses: Dispatch<SetStateAction<FinanceProcess[]>>;
-  tasks: FinanceTask[];
-  onUpdateTasks: Dispatch<SetStateAction<FinanceTask[]>>;
-  autoOpen?: boolean;
-  onModalHandled?: () => void;
-}
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from './FirebaseProvider';
 
 type FinanceTab = 'billing' | 'flow' | 'reminders';
 
 export default function FinanceView({ 
-  invoices, 
-  onAdd, 
-  processes, 
-  onUpdateProcesses, 
-  tasks, 
-  onUpdateTasks,
   autoOpen, 
   onModalHandled 
-}: FinanceViewProps) {
+}: { autoOpen?: boolean; onModalHandled?: () => void }) {
+  const { user } = useAuth();
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [processes, setProcesses] = useState<FinanceProcess[]>([]);
+  const [tasks, setTasks] = useState<FinanceTask[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [activeTab, setActiveTab] = useState<FinanceTab>('billing');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessModalOpen, setIsProcessModalOpen] = useState(false);
@@ -58,6 +50,32 @@ export default function FinanceView({
   
   const selectedProcess = processes.find(p => p.id === selectedProcessId);
   
+  useEffect(() => {
+    if (!user) return;
+
+    const qInvoices = query(collection(db, 'invoices'), where('ownerId', '==', user.uid));
+    const unsubInvoices = onSnapshot(qInvoices, (snapshot) => {
+      setInvoices(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Invoice)));
+    });
+
+    const qProcesses = query(collection(db, 'financeProcesses'), where('ownerId', '==', user.uid));
+    const unsubProcesses = onSnapshot(qProcesses, (snapshot) => {
+      setProcesses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinanceProcess)));
+    });
+
+    const qTasks = query(collection(db, 'financeTasks'), where('ownerId', '==', user.uid));
+    const unsubTasks = onSnapshot(qTasks, (snapshot) => {
+      setTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinanceTask)));
+      setLoading(false);
+    });
+
+    return () => {
+      unsubInvoices();
+      unsubProcesses();
+      unsubTasks();
+    };
+  }, [user]);
+
   const [dateFilter, setDateFilter] = useState({
     start: '',
     end: ''
@@ -99,27 +117,39 @@ export default function FinanceView({
     });
   };
 
-  const handleSubmitInvoice = (e: FormEvent) => {
+  const handleSubmitInvoice = async (e: FormEvent) => {
     e.preventDefault();
-    const invoiceToAdd: Invoice = {
-      ...newInvoice as Invoice,
-      id: `INV-2024-${Math.floor(Math.random() * 900 + 100)}`
-    };
-    onAdd(prev => [...prev, invoiceToAdd]);
-    setIsModalOpen(false);
-    setNewInvoice({ client: '', status: 'Pendiente', netAmount: 0, iva: 0, totalAmount: 0, paymentMethod: 'Transferencia', date: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) });
+    if (!user) return;
+
+    try {
+      await addDoc(collection(db, 'invoices'), {
+        ...newInvoice,
+        ownerId: user.uid,
+        createdAt: serverTimestamp()
+      });
+      setIsModalOpen(false);
+      setNewInvoice({ client: '', status: 'Pendiente', netAmount: 0, iva: 0, totalAmount: 0, paymentMethod: 'Transferencia', date: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) });
+    } catch (error) {
+      console.error(error);
+    }
   };
 
-  const handleCreateProcess = (e: FormEvent) => {
+  const handleCreateProcess = async (e: FormEvent) => {
     e.preventDefault();
-    const processToAdd: FinanceProcess = {
-      ...newProcess as FinanceProcess,
-      id: `PRC-${Math.floor(Math.random() * 1000)}`,
-      updatedAt: new Date().toLocaleDateString(),
-      documents: { paymentStatusIds: [], invoiceIds: [] }
-    };
-    onUpdateProcesses(prev => [processToAdd, ...prev]);
-    setIsProcessModalOpen(false);
+    if (!user) return;
+
+    try {
+      await addDoc(collection(db, 'financeProcesses'), {
+        ...newProcess,
+        ownerId: user.uid,
+        updatedAt: new Date().toLocaleDateString(),
+        createdAt: serverTimestamp(),
+        documents: { paymentStatusIds: [], invoiceIds: [] }
+      });
+      setIsProcessModalOpen(false);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const getStageColor = (stage: string) => {
@@ -834,15 +864,15 @@ export default function FinanceView({
               
               <div className="space-y-3">
                 <button 
-                  onClick={() => {
+                  onClick={async () => {
                     const stages: any[] = ['quotation', 'po_received', 'payment_status', 'invoiced', 'paid'];
                     const currentIdx = stages.indexOf(selectedProcess?.currentStage);
-                    if (currentIdx < stages.length - 1) {
-                      onUpdateProcesses(prev => prev.map(p => 
-                        p.id === selectedProcessId 
-                          ? { ...p, currentStage: stages[currentIdx + 1], updatedAt: new Date().toLocaleDateString() } 
-                          : p
-                      ));
+                    if (currentIdx < stages.length - 1 && selectedProcessId) {
+                      const docRef = doc(db, 'financeProcesses', selectedProcessId);
+                      await updateDoc(docRef, { 
+                        currentStage: stages[currentIdx + 1], 
+                        updatedAt: new Date().toLocaleDateString() 
+                      });
                     }
                   }}
                   className="w-full flex items-center justify-between p-4 bg-primary text-white rounded-xl shadow-sm hover:opacity-90 transition-all group"
@@ -862,15 +892,15 @@ export default function FinanceView({
                         type="text" 
                         placeholder="Ej: OC-99221" 
                         className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-mono focus:ring-2 focus:ring-primary/20 outline-none"
-                        onKeyDown={(e) => {
+                        onKeyDown={async (e) => {
                           if (e.key === 'Enter') {
                             const val = (e.target as HTMLInputElement).value;
-                            if (!val) return;
-                            onUpdateProcesses(prev => prev.map(p => 
-                              p.id === selectedProcessId 
-                                ? { ...p, documents: { ...p.documents, poId: val }, updatedAt: new Date().toLocaleDateString() } 
-                                : p
-                            ));
+                            if (!val || !selectedProcessId || !selectedProcess) return;
+                            const docRef = doc(db, 'financeProcesses', selectedProcessId);
+                            await updateDoc(docRef, { 
+                              documents: { ...selectedProcess.documents, poId: val }, 
+                              updatedAt: new Date().toLocaleDateString() 
+                            });
                             (e.target as HTMLInputElement).value = '';
                           }
                         }}

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -37,102 +37,8 @@ import HRView from './components/HRView';
 import { FirebaseProvider, useAuth } from './components/FirebaseProvider';
 import LoginView from './components/LoginView';
 import SettingsModal from './components/SettingsModal';
-
-const initialItems: Item[] = [
-  { id: '1', name: 'Perfil de Alumino 20x20', category: 'Estructural', stock: 150, unit: 'mts', sku: 'ALU-2020-S', minStock: 50 },
-  { id: '2', name: 'Motor Paso a Paso NEMA 23', category: 'Electrónica', stock: 12, unit: 'pzs', sku: 'MOT-N23-H', minStock: 15 },
-  { id: '3', name: 'Rodamiento Lineal 8mm', category: 'Mecánica', stock: 85, unit: 'pzs', sku: 'ROD-LIN-08', minStock: 20 },
-];
-
-const initialContacts: Contact[] = [
-  { id: '1', folio: 'CLI-0001', name: 'Juan Pérez', company: 'Industrias Regias', rutEmpresa: '76.123.456-7', rutContacto: '12.345.678-9', phone: '+569 1234 5678', address: 'Av. Industrial 123, Quilicura', email: 'jperez@regias.com', status: 'customer' },
-  { id: '2', folio: 'CLI-0002', name: 'María García', company: 'Logística del Norte', rutEmpresa: '77.234.567-8', rutContacto: '15.678.901-2', phone: '+569 8765 4321', address: 'Ruta 5 Norte Km 12', email: 'mgarcia@lognorte.cl', status: 'opportunity' },
-  { id: '3', folio: 'CLI-0003', name: 'Roberto Sánchez', company: 'Minería Real', rutEmpresa: '78.345.678-9', rutContacto: '10.123.456-7', phone: '+569 1111 2222', address: 'Antofagasta 456', email: 'rsanchez@mreal.cl', status: 'lead' },
-];
-
-const initialProjects: Project[] = [
-  { 
-    id: '1', 
-    name: 'Automatización Linea 4', 
-    location: 'Planta Quilicura', 
-    clientResponsible: 'Ing. Rodrigo Díaz', 
-    status: 'active', 
-    progress: 75, 
-    startDate: '2024-01-10', 
-    deadline: '2024-05-20', 
-    description: 'Renovación de sistema de control hidráulico.',
-    tasks: [
-      { id: 't1', title: 'Diseño de planos', status: 'completed' },
-      { id: 't2', title: 'Compra de componentes', status: 'completed' },
-      { id: 't3', title: 'Ensamblaje módulo A', status: 'completed' },
-      { id: 't4', title: 'Pruebas de presión', status: 'pending' },
-    ]
-  },
-  { 
-    id: '2', 
-    name: 'Instalación Sensores Planta 1', 
-    location: 'Maipú', 
-    clientResponsible: 'Ana Ortiz', 
-    status: 'delayed', 
-    progress: 33, 
-    startDate: '2024-02-12', 
-    deadline: '2024-05-15', 
-    description: 'Implementación de red de sensores IoT.',
-    tasks: [
-      { id: 't5', title: 'Relevamiento terreno', status: 'completed' },
-      { id: 't6', title: 'Instalación Gateway', status: 'in-progress' },
-      { id: 't7', title: 'Calibración nodos', status: 'pending' },
-    ]
-  },
-  { 
-    id: '3', 
-    name: 'Mantenimiento Preventivo C2', 
-    location: 'Calama', 
-    clientResponsible: 'Patricio Soto', 
-    status: 'completed', 
-    progress: 100, 
-    startDate: '2024-03-01', 
-    deadline: '2024-05-10', 
-    description: 'Servicio técnico trimestral de cabezales.',
-    tasks: [
-      { id: 't8', title: 'Limpieza profunda', status: 'completed' },
-      { id: 't9', title: 'Reemplazo filtros', status: 'completed' },
-    ]
-  },
-];
-
-const initialInvoices: Invoice[] = [
-  { id: 'INV-2024-001', client: 'TechMining S.A.', status: 'Pagado', date: '10 Mar 2024', netAmount: 10420, iva: 1980, totalAmount: 12400, paymentMethod: 'Transferencia' },
-  { id: 'INV-2024-002', client: 'Obras Civiles', status: 'Pendiente', date: '12 Mar 2024', netAmount: 7521, iva: 1429, totalAmount: 8950, paymentMethod: 'Transferencia' },
-  { id: 'INV-2024-003', client: 'Energía Solar MX', status: 'Vencido', date: '05 Mar 2024', netAmount: 18571, iva: 3529, totalAmount: 22100, paymentMethod: 'Cheque' },
-];
-
-const initialProcesses: FinanceProcess[] = [
-  { 
-    id: 'PRC-001', 
-    clientName: 'Antofagasta Minerals', 
-    projectName: 'Mantención Planta Filtros', 
-    currentStage: 'po_received', 
-    updatedAt: '14/05/2024', 
-    totalValue: 45000,
-    documents: { quotationId: 'Q-2024-992', poId: 'OC-AM-1182', paymentStatusIds: [], invoiceIds: [] }
-  },
-  { 
-    id: 'PRC-002', 
-    clientName: 'BHP Billiton', 
-    projectName: 'Instalación Sensores Proximidad', 
-    currentStage: 'payment_status', 
-    updatedAt: '15/05/2024', 
-    totalValue: 12500,
-    documents: { quotationId: 'Q-2024-995', poId: 'OC-BHP-2201', paymentStatusIds: ['EP-MAR-01', 'EP-ABR-02'], invoiceIds: ['INV-2024-001'] }
-  }
-];
-
-const initialFinanceTasks: FinanceTask[] = [
-  { id: 'T-1', title: 'Cobrar factura vencida #003', date: '16/05/2024', type: 'collection', priority: 'high', status: 'pending', clientName: 'Energía Solar MX' },
-  { id: 'T-2', title: 'Enviar Estado de Pago #2 BHP', date: '17/05/2024', type: 'follow_up', priority: 'medium', status: 'pending', clientName: 'BHP Billiton' },
-  { id: 'T-3', title: 'Recepción OC Antofagasta Minerals', date: '14/05/2024', type: 'follow_up', priority: 'low', status: 'done', clientName: 'Antofagasta Minerals' },
-];
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from './lib/firebase';
 
 export default function App() {
   return (
@@ -149,42 +55,17 @@ function AppContent() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Global Shared State
-  const [items, setItems] = useState<Item[]>(initialItems);
-  const [contacts, setContacts] = useState<Contact[]>(initialContacts);
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
-  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([
-    {
-      id: 'emp-01',
-      firstName: 'Juan',
-      lastName: 'Pérez',
-      rut: '12.345.678-9',
-      position: 'Ingeniero de Proyectos',
-      department: 'Ingeniería',
-      joinDate: '2023-01-15',
-      birthDate: '1990-05-20',
-      address: 'Av. Providencia 1234, Santiago',
-      phone: '+569 8765 4321',
-      email: 'jperez@rescoing.cl',
-      afp: 'Habitat',
-      health: 'Fonasa',
-      civilStatus: 'Casado',
-      nationality: 'Chilena',
-      status: 'active',
-      salary: 1250000,
-      vacationDays: 15,
-      documents: [
-        { id: 'doc-1', name: 'Contrato Indefinido.pdf', type: 'pdf', uploadDate: '15/01/2023', size: '1.2 MB' },
-        { id: 'doc-2', name: 'Certificado AFP.pdf', type: 'pdf', uploadDate: '10/05/2024', size: '0.4 MB' }
-      ]
-    }
-  ]);
-  const [riskRecords, setRiskRecords] = useState<RiskPreventionRecord[]>([]);
-  const [financeProcesses, setFinanceProcesses] = useState<FinanceProcess[]>(initialProcesses);
-  const [financeTasks, setFinanceTasks] = useState<FinanceTask[]>(initialFinanceTasks);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [autoOpenModal, setAutoOpenModal] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'contacts'), where('ownerId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setContacts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contact)));
+    });
+    return unsubscribe;
+  }, [user]);
 
   const handleQuickAction = (action: string) => {
     setAutoOpenModal(true);
@@ -383,24 +264,18 @@ function AppContent() {
               )}
               {activeModule === 'finance' && (
                 <FinanceView 
-                  invoices={invoices} 
-                  onAdd={setInvoices} 
-                  processes={financeProcesses}
-                  onUpdateProcesses={setFinanceProcesses}
-                  tasks={financeTasks}
-                  onUpdateTasks={setFinanceTasks}
                   autoOpen={autoOpenModal} 
                   onModalHandled={() => setAutoOpenModal(false)} 
                 />
               )}
               {activeModule === 'documents' && (
-                <DocumentsView documents={documents} onUpdate={setDocuments} contacts={contacts} />
+                <DocumentsView contacts={contacts} />
               )}
               {activeModule === 'suppliers' && (
-                <SuppliersView suppliers={suppliers} onUpdate={setSuppliers} />
+                <SuppliersView />
               )}
               {activeModule === 'hr' && (
-                <HRView employees={employees} onUpdate={setEmployees} />
+                <HRView />
               )}
             </motion.div>
           </AnimatePresence>

@@ -1,4 +1,4 @@
-import React, { useState, Dispatch, SetStateAction, FormEvent } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
 import { jsPDF } from 'jspdf';
 import { 
   UserRound, 
@@ -34,11 +34,9 @@ import {
 import { motion } from 'motion/react';
 import { Employee } from '../types';
 import Modal from './ui/Modal';
-
-interface HRViewProps {
-  employees: Employee[];
-  onUpdate: Dispatch<SetStateAction<Employee[]>>;
-}
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from './FirebaseProvider';
 
 const HR_MODULES = [
   { id: 'employees', label: 'Trabajadores', icon: UserRound },
@@ -53,7 +51,10 @@ const HR_MODULES = [
 const AFP_LIST = ['Modelo', 'Cuprum', 'Habitat', 'PlanVital', 'ProVida', 'Uno', 'Capital'];
 const HEALTH_LIST = ['Fonasa', 'Banmédica', 'Colmena', 'Consalud', 'CruzBlanca', 'Esencial', 'Nueva Masvida', 'Vida Tres'];
 
-export default function HRView({ employees, onUpdate }: HRViewProps) {
+export default function HRView() {
+  const { user } = useAuth();
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeSubModule, setActiveSubModule] = useState(HR_MODULES[0].id);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
@@ -132,22 +133,41 @@ export default function HRView({ employees, onUpdate }: HRViewProps) {
 
   const [activeTab, setActiveTab] = useState<'info' | 'docs'>('info');
 
-  const handleSubmit = (e: FormEvent) => {
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(collection(db, 'employees'), where('ownerId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee)));
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, [user]);
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (editingEmployee) {
-      onUpdate(prev => prev.map(emp => emp.id === editingEmployee.id ? { ...emp, ...formEmployee } as Employee : emp));
-    } else {
-      const employeeToAdd: Employee = {
-        ...formEmployee as Employee,
-        id: Math.random().toString(36).substr(2, 9),
-        documents: []
-      };
-      onUpdate(prev => [employeeToAdd, ...prev]);
+    if (!user) return;
+
+    try {
+      if (editingEmployee) {
+        const docRef = doc(db, 'employees', editingEmployee.id);
+        await updateDoc(docRef, { ...formEmployee, updatedAt: serverTimestamp() });
+      } else {
+        await addDoc(collection(db, 'employees'), {
+          ...formEmployee,
+          ownerId: user.uid,
+          createdAt: serverTimestamp(),
+          documents: []
+        });
+      }
+      setIsModalOpen(false);
+      setEditingEmployee(null);
+      setActiveTab('info');
+      resetForm();
+    } catch (error) {
+      console.error(error);
     }
-    setIsModalOpen(false);
-    setEditingEmployee(null);
-    setActiveTab('info');
-    resetForm();
   };
 
   const resetForm = () => {
@@ -486,8 +506,13 @@ export default function HRView({ employees, onUpdate }: HRViewProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredEmployees.length > 0 ? filteredEmployees.map((emp, i) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {loading ? (
+                  <div className="col-span-full py-12 text-center bg-white rounded-xl border border-slate-200">
+                    <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Cargando...</p>
+                  </div>
+                ) : filteredEmployees.length > 0 ? filteredEmployees.map((emp, i) => (
               <motion.div 
                 key={emp.id}
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -1208,7 +1233,7 @@ export default function HRView({ employees, onUpdate }: HRViewProps) {
           </div>
 
           <button 
-            onClick={() => {
+            onClick={async () => {
               const emp = employees.find(e => e.id === newVacation.employeeId);
               if (!emp) return;
 
@@ -1220,11 +1245,11 @@ export default function HRView({ employees, onUpdate }: HRViewProps) {
                 size: '0.35 MB'
               };
 
-              onUpdate(prev => prev.map(e => 
-                e.id === emp.id 
-                ? { ...e, documents: [newDoc, ...(e.documents || [])], vacationDays: e.vacationDays - 1 } 
-                : e
-              ));
+              const docRef = doc(db, 'employees', emp.id);
+              await updateDoc(docRef, {
+                documents: [newDoc, ...(emp.documents || [])],
+                vacationDays: (emp.vacationDays || 15) - 1
+              });
 
               setIsVacationModalOpen(false);
               alert(`Solicitud de vacaciones de ${emp.firstName} procesada y guardada.`);
@@ -1284,7 +1309,7 @@ export default function HRView({ employees, onUpdate }: HRViewProps) {
           </div>
 
           <button 
-            onClick={() => {
+            onClick={async () => {
               const emp = employees.find(e => e.id === newCertificate.employeeId);
               if (!emp) return;
 
@@ -1296,11 +1321,10 @@ export default function HRView({ employees, onUpdate }: HRViewProps) {
                 size: '0.28 MB'
               };
 
-              onUpdate(prev => prev.map(e => 
-                e.id === emp.id 
-                ? { ...e, documents: [newDoc, ...(e.documents || [])] } 
-                : e
-              ));
+              const docRef = doc(db, 'employees', emp.id);
+              await updateDoc(docRef, {
+                documents: [newDoc, ...(emp.documents || [])]
+              });
 
               setIsCertificateModalOpen(false);
               alert(`Certificado de ${newCertificate.type} generado y guardado en carpeta.`);
@@ -1425,7 +1449,7 @@ export default function HRView({ employees, onUpdate }: HRViewProps) {
           )}
 
           <button 
-            onClick={() => {
+            onClick={async () => {
               const emp = employees.find(e => e.id === newPayroll.employeeId);
               if (!emp) return;
               
@@ -1456,11 +1480,10 @@ export default function HRView({ employees, onUpdate }: HRViewProps) {
                 }
               };
 
-              onUpdate(prev => prev.map(e => 
-                e.id === emp.id 
-                ? { ...e, documents: [newDoc, ...(e.documents || [])] } 
-                : e
-              ));
+              const docRef = doc(db, 'employees', emp.id);
+              await updateDoc(docRef, {
+                documents: [newDoc, ...(emp.documents || [])]
+              });
 
               setPayrolls([pay, ...payrolls]);
               setIsPayrollModalOpen(false);
@@ -1560,7 +1583,7 @@ export default function HRView({ employees, onUpdate }: HRViewProps) {
           </div>
 
           <button 
-            onClick={() => {
+            onClick={async () => {
               const emp = employees.find(e => e.id === newContract.employeeId);
               if (!emp) return;
 
@@ -1580,11 +1603,10 @@ export default function HRView({ employees, onUpdate }: HRViewProps) {
                 }
               };
 
-              onUpdate(prev => prev.map(e => 
-                e.id === emp.id 
-                ? { ...e, documents: [newDoc, ...(e.documents || [])] } 
-                : e
-              ));
+              const docRef = doc(db, 'employees', emp.id);
+              await updateDoc(docRef, {
+                documents: [newDoc, ...(emp.documents || [])]
+              });
 
               setIsContractModalOpen(false);
               alert(`Contrato ${newContract.type} generado y guardado en la ficha de ${emp.firstName}.`);

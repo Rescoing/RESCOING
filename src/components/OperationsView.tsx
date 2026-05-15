@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent, useRef } from 'react';
+import { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
 import { Clock, CheckCircle2, AlertCircle, Plus, Edit2, Trash2, ListChecks, FileText, ShieldAlert, ChevronRight, Save, Flame, HelpCircle, Upload, File, MoreVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Project, ProjectTask, RiskPreventionRecord, ProjectDocument } from '../types';
@@ -204,7 +204,7 @@ export default function OperationsView({ autoOpen, onModalHandled }: OperationsV
     setNewRisk({ type: 'talk', description: '', date: new Date().toISOString().split('T')[0] });
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedProjectId) return;
 

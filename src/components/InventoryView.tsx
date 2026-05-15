@@ -1,9 +1,9 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { Search, Plus, Filter, MoreVertical, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Filter, MoreVertical, AlertTriangle, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Item } from '../types';
 import Modal from './ui/Modal';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
 
@@ -78,6 +78,16 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
       console.error("Error adding item:", error);
       alert("Error al guardar el artículo");
     }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('¿Eliminar este artículo?')) {
+      await deleteDoc(doc(db, 'inventory', id));
+    }
+  };
+
+  const updateStock = async (id: string, newStock: number) => {
+    await updateDoc(doc(db, 'inventory', id), { stock: newStock });
   };
 
   return (
@@ -239,9 +249,20 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
                       )}
                     </td>
                     <td className="p-4 text-right">
-                      <button className="p-2 text-slate-400 hover:text-primary transition-colors">
-                        <MoreVertical size={18} />
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button 
+                          onClick={() => updateStock(item.id, item.stock + 1)}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors bg-slate-50 rounded"
+                        >
+                          <Plus size={14} />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(item.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-slate-50 rounded"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </motion.tr>
                 );

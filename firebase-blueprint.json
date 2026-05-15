@@ -47,6 +47,105 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "name"]
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "Item in inventory",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "name": { "type": "string" },
+        "stock": { "type": "number" },
+        "category": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name"]
+    },
+    "RiskRecord": {
+      "title": "Risk Record",
+      "description": "Risk prevention record",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "type": { "type": "string" },
+        "description": { "type": "string" },
+        "projectId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "description"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "Employee record",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "rut": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "firstName", "lastName", "rut"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Supplier record",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "name": { "type": "string" },
+        "rutEmpresa": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Billing invoice",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "client": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "client", "totalAmount"]
+    },
+    "FinanceProcess": {
+      "title": "Finance Process",
+      "description": "Lifecycle of a sales process",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "currentStage": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "clientName"]
+    },
+    "FinanceTask": {
+      "title": "Finance Task",
+      "description": "Reminder or task for finance",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title"]
+    },
+    "Document": {
+      "title": "Document",
+      "description": "Business document (Quotation, PO, etc)",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "type": { "type": "string" },
+        "folio": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "type", "folio"]
     }
   },
   "firestore": {
@@ -61,6 +160,38 @@
     "/projects/{projectId}": {
       "schema": "Project",
       "description": "Project management"
+    },
+    "/inventory/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Inventory management"
+    },
+    "/riskRecords/{recordId}": {
+      "schema": "RiskRecord",
+      "description": "Risk prevention records"
+    },
+    "/employees/{employeeId}": {
+      "schema": "Employee",
+      "description": "Human Resources"
+    },
+    "/suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Supplier management"
+    },
+    "/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Billing and Invoices"
+    },
+    "/financeProcesses/{processId}": {
+      "schema": "FinanceProcess",
+      "description": "Finance Sales Processes"
+    },
+    "/financeTasks/{taskId}": {
+      "schema": "FinanceTask",
+      "description": "Finance Tasks and Reminders"
+    },
+    "/documents/{docId}": {
+      "schema": "Document",
+      "description": "Business Documents"
     }
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, FormEvent } from 'react';
 import { X, Save, Building2, Upload, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './FirebaseProvider';
@@ -21,7 +21,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     companyLogo: profile?.companyLogo || ''
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
