@@ -47,6 +47,9 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setDocuments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Document)));
       setLoading(false);
+    }, (error) => {
+      console.error("Documents snapshot error:", error);
+      setLoading(false);
     });
 
     return unsubscribe;

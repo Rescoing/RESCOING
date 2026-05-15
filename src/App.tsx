@@ -23,7 +23,9 @@ import {
   ShoppingCart,
   Ticket,
   BarChart3,
-  FolderOpen
+  FolderOpen,
+  Clock,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Module, Item, Contact, Project, Invoice, Document, Supplier, Employee, FinanceProcess, FinanceTask, RiskPreventionRecord } from './types';
@@ -36,6 +38,7 @@ import DocumentsView from './components/DocumentsView';
 import SuppliersView from './components/SuppliersView';
 import HRView from './components/HRView';
 import LibraryView from './components/LibraryView';
+import AdminUsersView from './components/AdminUsersView';
 import { FirebaseProvider, useAuth } from './components/FirebaseProvider';
 import LoginView from './components/LoginView';
 import SettingsModal from './components/SettingsModal';
@@ -61,13 +64,15 @@ function AppContent() {
   const [autoOpenModal, setAutoOpenModal] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || (profile?.accessStatus !== 'approved' && profile?.role !== 'admin')) return;
     const q = query(collection(db, 'contacts'), where('ownerId', '==', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setContacts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contact)));
+    }, (error) => {
+      console.error("Contacts global listener error:", error);
     });
     return unsubscribe;
-  }, [user]);
+  }, [user, profile]);
 
   const handleQuickAction = (action: string) => {
     setAutoOpenModal(true);
@@ -94,6 +99,12 @@ function AppContent() {
     { id: 'library', label: 'Biblioteca', icon: FolderOpen },
   ];
 
+  // Filter items by permission and add admin module if applicable
+  const finalNavItems = [
+    ...navItems.filter(item => profile?.role === 'admin' || (profile?.permissions?.[item.id] !== false)),
+    ...(profile?.role === 'admin' ? [{ id: 'admin_users', label: 'Usuarios', icon: Settings }] : [])
+  ];
+
   if (loading) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-slate-50">
@@ -107,6 +118,39 @@ function AppContent() {
 
   if (!user) {
     return <LoginView />;
+  }
+
+  const isMasterAdmin = user?.email === 'rescoing@gmail.com';
+
+  if (profile?.accessStatus !== 'approved' && profile?.role !== 'admin' && !isMasterAdmin) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-slate-50 p-6">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full bg-white rounded-3xl shadow-xl p-10 text-center border border-slate-100"
+        >
+          <div className={`mx-auto w-20 h-20 rounded-full flex items-center justify-center mb-6 ${profile?.accessStatus === 'denied' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+            {profile?.accessStatus === 'denied' ? <XCircle size={40} /> : <Clock size={40} />}
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 mb-2">
+            {profile?.accessStatus === 'denied' ? 'Acceso Denegado' : 'Acceso en Espera'}
+          </h2>
+          <p className="text-slate-500 mb-8">
+            {profile?.accessStatus === 'denied' 
+              ? 'Tu acceso a la plataforma ha sido revocado por un administrador.' 
+              : 'Un administrador debe aprobar tu cuenta para que puedas acceder al sistema.'}
+          </p>
+          <button 
+            onClick={logout}
+            className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-all"
+          >
+            <LogOut size={18} />
+            Cerrar Sesión
+          </button>
+        </motion.div>
+      </div>
+    );
   }
 
   return (
@@ -149,7 +193,7 @@ function AppContent() {
           <p className={`text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 px-2 ${!isSidebarOpen && 'text-center'}`}>
             {isSidebarOpen ? 'Menu Principal' : '...'}
           </p>
-          {navItems.map((item) => {
+          {finalNavItems.map((item) => {
             const isActive = activeModule === item.id;
             return (
               <button
@@ -205,7 +249,7 @@ function AppContent() {
             <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">ERP</span>
             <ChevronRight size={14} className="text-slate-300" />
             <span className="text-sm font-semibold text-slate-900">
-              {navItems.find(i => i.id === activeModule)?.label || 'Dashboard'}
+              {finalNavItems.find(i => i.id === activeModule)?.label || 'Dashboard'}
             </span>
           </div>
           
@@ -282,6 +326,9 @@ function AppContent() {
               )}
               {activeModule === 'library' && (
                 <LibraryView />
+              )}
+              {activeModule === 'admin_users' && (
+                <AdminUsersView />
               )}
             </motion.div>
           </AnimatePresence>

@@ -34,6 +34,9 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
       })) as Item[];
       setItems(docs);
       setLoading(false);
+    }, (error) => {
+      console.error("Inventory snapshot error:", error);
+      setLoading(false);
     });
 
     return unsubscribe;

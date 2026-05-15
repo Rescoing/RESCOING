@@ -9,8 +9,26 @@ service cloud.firestore {
 
     // Helper functions
     function isSignedIn() {
-      // NOTE: Temporarily relaxed for debugging
+      // NOTE: Temporarily relaxed for debugging. Re-enable email_verified in production.
       return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'rescoing@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin')
+      );
+    }
+
+    function isApproved() {
+      // Admins are always approved
+      return request.auth.token.email == 'rescoing@gmail.com' || (
+        isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('accessStatus', 'pending') == 'approved'
+        )
+      );
     }
 
     function isValidId(id) {
@@ -31,20 +49,31 @@ service cloud.firestore {
 
     // --- User Profiles & Company Settings ---
     match /users/{userId} {
-      allow get: if isOwner(userId);
+      allow list: if isAdmin();
+      allow get: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) 
         && isValidUserProfile(incoming())
         && incoming().uid == userId
-        && incoming().email == request.auth.token.email;
-      allow update: if isOwner(userId)
+        && incoming().email == request.auth.token.email
+        // First user or specific email can be admin, others start as user/pending
+        && (incoming().role == 'user' || request.auth.token.email == 'rescoing@gmail.com')
+        && (incoming().accessStatus == 'pending' || request.auth.token.email == 'rescoing@gmail.com');
+      
+      allow update: if (isOwner(userId) || isAdmin())
         && isValidUserProfile(incoming())
         && incoming().uid == existing().uid
         && incoming().email == existing().email
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'displayName', 'photoURL', 'companyName', 'companyRut', 
-          'companyAddress', 'companyPhone', 'companyLogo', 
-          'companyEmail', 'companyWebsite', 'updatedAt'
-        ]);
+        && (
+          // Admin can update everything including role and permissions
+          isAdmin() || (
+            isOwner(userId) && 
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'photoURL', 'companyName', 'companyRut', 
+              'companyAddress', 'companyPhone', 'companyLogo', 
+              'companyEmail', 'companyWebsite', 'updatedAt'
+            ])
+          )
+        );
     }
 
     function isValidUserProfile(data) {
@@ -56,19 +85,19 @@ service cloud.firestore {
     // --- Generic Owner-Scoped Collections ---
     // This pattern secures multiple collections where ownership is defined by 'ownerId'
     match /{collectionName}/{docId} {
-      allow list: if isSignedIn();
-      allow get: if isOwner(resource.data.ownerId) && isValidId(docId);
-      allow create: if isOwner(incoming().ownerId) 
+      allow list: if isApproved() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow get: if isApproved() && (isOwner(resource.data.ownerId) || isAdmin()) && isValidId(docId);
+      allow create: if isApproved() && (isOwner(incoming().ownerId) || isAdmin())
         && isValidId(docId)
         && collectionName in [
           'contacts', 'projects', 'inventory', 'riskRecords', 
           'employees', 'suppliers', 'invoices', 'financeProcesses', 
           'financeTasks', 'documents', 'library', 'folioCounters'
         ];
-      allow update: if isOwner(existing().ownerId)
+      allow update: if isApproved() && (isOwner(existing().ownerId) || isAdmin())
         && incoming().ownerId == existing().ownerId
         && isValidId(docId);
-      allow delete: if isOwner(existing().ownerId);
+      allow delete: if isApproved() && (isOwner(existing().ownerId) || isAdmin());
     }
   }
 }

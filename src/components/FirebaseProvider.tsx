@@ -15,6 +15,12 @@ interface UserProfile {
   companyLogo?: string;
   companyEmail?: string;
   companyWebsite?: string;
+  role: 'admin' | 'user';
+  accessStatus: 'pending' | 'approved' | 'denied';
+  permissions: {
+    [key: string]: boolean;
+  };
+  updatedAt?: any;
 }
 
 interface AuthContextType {
@@ -48,21 +54,58 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
 
     const docRef = doc(db, 'users', user.uid);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+    const unsubscribe = onSnapshot(docRef, async (docSnap) => {
+      const isDefaultAdmin = user.email === 'rescoing@gmail.com';
+      
       if (docSnap.exists()) {
-        setProfile(docSnap.data() as UserProfile);
+        const data = docSnap.data() as UserProfile;
+        
+        // Auto-fix default admin profile if fields are missing or status is not approved
+        if (isDefaultAdmin && (data.accessStatus !== 'approved' || data.role !== 'admin')) {
+          const updatedProfile = {
+            ...data,
+            role: 'admin' as const,
+            accessStatus: 'approved' as const,
+            updatedAt: new Date().toISOString()
+          };
+          await setDoc(docRef, updatedProfile, { merge: true });
+          setProfile(updatedProfile);
+        } else {
+          setProfile(data);
+        }
+        setLoading(false);
       } else {
         // Create initial profile
+        const isDefaultAdmin = user.email === 'rescoing@gmail.com';
         const initialProfile: UserProfile = {
           uid: user.uid,
           email: user.email || '',
           displayName: user.displayName || '',
           photoURL: user.photoURL || '',
+          role: isDefaultAdmin ? 'admin' : 'user',
+          accessStatus: isDefaultAdmin ? 'approved' : 'pending',
+          permissions: {
+            dashboard: true,
+            crm: isDefaultAdmin,
+            inventory: isDefaultAdmin,
+            operations: isDefaultAdmin,
+            finance: isDefaultAdmin,
+            documents: isDefaultAdmin,
+            suppliers: isDefaultAdmin,
+            hr: isDefaultAdmin,
+            library: isDefaultAdmin,
+          },
+          updatedAt: new Date().toISOString()
         };
-        setDoc(docRef, initialProfile);
-        setProfile(initialProfile);
+        try {
+          await setDoc(docRef, initialProfile, { merge: true });
+          setProfile(initialProfile);
+          setLoading(false);
+        } catch (error) {
+          console.error("Error creating profile:", error);
+          setLoading(false);
+        }
       }
-      setLoading(false);
     }, (error) => {
       console.error("Profile snapshot error:", error);
       setLoading(false);

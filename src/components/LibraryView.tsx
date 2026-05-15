@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   FileText, Upload, Download, Eye, Trash2, Search, 
   Filter, Plus, File, Image as ImageIcon, FileCode,
-  AlertCircle
+  AlertCircle, CheckSquare, Square
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -46,13 +46,11 @@ export default function LibraryView() {
   const [filterType, setFilterType] = useState('All');
   const [uploading, setUploading] = useState(false);
   const [previewItem, setPreviewItem] = useState<LibraryItem | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [uploadQueue, setUploadQueue] = useState<{file: File, status: 'pending' | 'uploading' | 'complete' | 'error', progress: number}[]>([]);
 
   const [formData, setFormData] = useState({
-    name: '',
     docType: DOCUMENT_TYPES[0],
-    fileName: '',
-    fileType: '',
-    fileData: ''
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -82,78 +80,95 @@ export default function LibraryView() {
   }, [user]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    // Limit size for Firestore (base64 overhead means ~700KB max for 1MB total doc)
-    if (file.size > 700000) {
-      alert("El archivo es muy pesado para esta versión (máx 700KB).");
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
+    const newFiles = Array.from(files).map(file => ({
+      file,
+      status: 'pending' as const,
+      progress: 0
+    }));
 
-    const reader = new FileReader();
-    reader.onload = (loadEvent) => {
-      const base64 = loadEvent.target?.result as string;
-      setFormData(prev => ({
-        ...prev,
-        fileName: file.name,
-        fileType: file.type,
-        fileData: base64,
-        name: prev.name || file.name.split('.')[0]
-      }));
-    };
-    reader.readAsDataURL(file);
+    setUploadQueue(prev => [...prev, ...newFiles]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !formData.fileData) return;
+  const processUpload = async () => {
+    if (!user || uploadQueue.length === 0 || uploading) return;
 
     setUploading(true);
-    try {
-      // Get next folio within a transaction to ensure no duplicates
-      const counterId = `${user.uid}_${formData.docType.toLowerCase().replace(/\s+/g, '_')}`;
-      const counterRef = doc(db, 'folioCounters', counterId);
+    const queue = [...uploadQueue];
 
-      let nextFolio = 1;
+    for (let i = 0; i < queue.length; i++) {
+      if (queue[i].status !== 'pending') continue;
 
-      await runTransaction(db, async (transaction) => {
-        const counterDoc = await transaction.get(counterRef);
-        if (counterDoc.exists()) {
-          nextFolio = counterDoc.data().lastFolio + 1;
-          transaction.update(counterRef, { lastFolio: nextFolio });
-        } else {
-          transaction.set(counterRef, {
-            ownerId: user.uid,
-            docType: formData.docType,
-            lastFolio: 1
-          });
+      const currentFile = queue[i].file;
+      queue[i].status = 'uploading';
+      queue[i].progress = 10;
+      setUploadQueue([...queue]);
+
+      try {
+        if (currentFile.size > 700000) {
+          throw new Error("Archivo muy pesado (máx 700KB)");
         }
 
-        const newDocRef = doc(collection(db, 'library'));
-        transaction.set(newDocRef, {
-          ...formData,
-          folio: nextFolio,
-          ownerId: user.uid,
-          createdAt: serverTimestamp()
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(currentFile);
         });
-      });
 
-      setIsModalOpen(false);
-      setFormData({
-        name: '',
-        docType: DOCUMENT_TYPES[0],
-        fileName: '',
-        fileType: '',
-        fileData: ''
-      });
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      alert("Error al subir el archivo.");
-    } finally {
-      setUploading(false);
+        queue[i].progress = 50;
+        setUploadQueue([...queue]);
+
+        const counterId = `${user.uid}_${formData.docType.toLowerCase().replace(/\s+/g, '_')}`;
+        const counterRef = doc(db, 'folioCounters', counterId);
+
+        await runTransaction(db, async (transaction) => {
+          const counterDoc = await transaction.get(counterRef);
+          let nextFolio = 1;
+          
+          if (counterDoc.exists()) {
+            nextFolio = counterDoc.data().lastFolio + 1;
+            transaction.update(counterRef, { lastFolio: nextFolio });
+          } else {
+            transaction.set(counterRef, {
+              ownerId: user.uid,
+              docType: formData.docType,
+              lastFolio: 1
+            });
+          }
+
+          const newDocRef = doc(collection(db, 'library'));
+          transaction.set(newDocRef, {
+            name: currentFile.name.split('.')[0],
+            docType: formData.docType,
+            fileName: currentFile.name,
+            fileType: currentFile.type,
+            fileData: base64,
+            folio: nextFolio,
+            ownerId: user.uid,
+            createdAt: serverTimestamp()
+          });
+        });
+
+        queue[i].status = 'complete';
+        queue[i].progress = 100;
+        setUploadQueue([...queue]);
+      } catch (error) {
+        console.error("Error processing file:", error);
+        queue[i].status = 'error';
+        setUploadQueue([...queue]);
+      }
+    }
+
+    setUploading(false);
+    if (queue.every(q => q.status === 'complete')) {
+      setTimeout(() => {
+        setIsModalOpen(false);
+        setUploadQueue([]);
+      }, 1500);
     }
   };
 
@@ -167,6 +182,20 @@ export default function LibraryView() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (window.confirm(`¿Seguro que deseas eliminar ${selectedIds.length} archivos?`)) {
+      try {
+        for (const id of selectedIds) {
+          await deleteDoc(doc(db, 'library', id));
+        }
+        setSelectedIds([]);
+      } catch (error) {
+        console.error("Error in bulk delete:", error);
+      }
+    }
+  };
+
   const handleDownload = (item: LibraryItem) => {
     const link = document.createElement('a');
     link.href = item.fileData;
@@ -174,6 +203,20 @@ export default function LibraryView() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredItems.length && filteredItems.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredItems.map(i => i.id));
+    }
   };
 
   const filteredItems = items.filter(item => {
@@ -197,16 +240,43 @@ export default function LibraryView() {
           <h2 className="text-2xl font-bold text-slate-900">Biblioteca Digital</h2>
           <p className="text-slate-500">Gestión de documentos, planos y archivos corporativos</p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-all font-medium shadow-sm w-fit"
-        >
-          <Upload size={20} />
-          <span>Subir Archivo</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {selectedIds.length > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-2 rounded-lg hover:bg-rose-100 transition-all font-medium border border-rose-200 shadow-sm"
+            >
+              <Trash2 size={20} />
+              <span>Eliminar ({selectedIds.length})</span>
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setUploadQueue([]);
+              setIsModalOpen(true);
+            }}
+            className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-all font-medium shadow-sm w-fit"
+          >
+            <Upload size={20} />
+            <span>Subir Archivo</span>
+          </button>
+        </div>
       </div>
 
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-4">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-center gap-4">
+        <div className="flex items-center gap-2 px-2 shrink-0">
+          <button 
+            onClick={toggleSelectAll}
+            className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-500"
+            title="Seleccionar Todo"
+          >
+            {selectedIds.length > 0 && selectedIds.length === filteredItems.length ? (
+              <CheckSquare size={20} className="text-primary" />
+            ) : (
+              <Square size={20} />
+            )}
+          </button>
+        </div>
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
@@ -241,9 +311,19 @@ export default function LibraryView() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col"
+              className={`bg-white rounded-xl border transition-all overflow-hidden flex flex-col ${selectedIds.includes(item.id) ? 'border-primary ring-2 ring-primary/10' : 'border-slate-200 shadow-sm hover:shadow-md'}`}
             >
               <div className="h-32 bg-slate-50 flex items-center justify-center border-b border-slate-100 relative group">
+                <button 
+                  onClick={() => toggleSelect(item.id)}
+                  className="absolute top-2 left-2 z-10 p-1 bg-white/90 rounded border border-slate-200 shadow-sm"
+                >
+                  {selectedIds.includes(item.id) ? (
+                    <CheckSquare size={16} className="text-primary" />
+                  ) : (
+                    <Square size={16} className="text-slate-400" />
+                  )}
+                </button>
                 {item.fileType.includes('image') ? (
                   <img 
                     src={item.fileData} 
@@ -257,26 +337,26 @@ export default function LibraryView() {
                 )}
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
                   <button 
-                    onClick={() => setPreviewItem(item)}
+                    onClick={(e) => { e.stopPropagation(); setPreviewItem(item); }}
                     className="p-2 bg-white rounded-full hover:bg-slate-100 transition-colors"
                   >
                     <Eye size={18} className="text-slate-700" />
                   </button>
                   <button 
-                    onClick={() => handleDownload(item)}
+                    onClick={(e) => { e.stopPropagation(); handleDownload(item); }}
                     className="p-2 bg-white rounded-full hover:bg-slate-100 transition-colors"
                   >
                     <Download size={18} className="text-slate-700" />
                   </button>
                 </div>
               </div>
-              <div className="p-4 flex-1 flex flex-col">
-                <div className="flex items-start justify-between gap-2">
+              <div className="p-4 flex-1 flex flex-col" onClick={() => toggleSelect(item.id)}>
+                <div className="flex items-start justify-between gap-2 cursor-pointer">
                   <div className="min-w-0">
                     <h3 className="font-semibold text-slate-900 truncate" title={item.name}>{item.name}</h3>
                     <p className="text-xs text-slate-500 truncate">{item.fileName}</p>
                   </div>
-                  <div className="bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded">
+                  <div className="bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0">
                     #{item.folio.toString().padStart(4, '0')}
                   </div>
                 </div>
@@ -286,7 +366,7 @@ export default function LibraryView() {
                     {item.docType}
                   </span>
                   <button 
-                    onClick={() => handleDelete(item.id, item.fileName)}
+                    onClick={(e) => { e.stopPropagation(); handleDelete(item.id, item.fileName); }}
                     className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"
                   >
                     <Trash2 size={16} />
@@ -306,30 +386,16 @@ export default function LibraryView() {
         </div>
       )}
 
-      {/* Upload Modal */}
+      {/* Bulk Upload Modal */}
       <Modal 
         isOpen={isModalOpen} 
         onClose={() => !uploading && setIsModalOpen(false)} 
         title="Subir a la Biblioteca"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Nombre descriptivo
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-              placeholder="Ej: Contrato de Arriendo 2024"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Tipo de Documento
+              Tipo de Documento para el lote
             </label>
             <select
               value={formData.docType}
@@ -344,39 +410,66 @@ export default function LibraryView() {
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Archivo (Máx 700KB)
+              Archivos (Máx 700KB por archivo)
             </label>
             <div 
               onClick={() => fileInputRef.current?.click()}
               className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer hover:border-primary transition-colors bg-slate-50"
             >
               <div className="space-y-1 text-center">
-                {formData.fileName ? (
-                  <div className="flex flex-col items-center">
-                    {getFileIcon(formData.fileType)}
-                    <p className="text-sm text-slate-700 font-medium mt-2">{formData.fileName}</p>
-                    <p className="text-xs text-slate-500">Haga clic para cambiar</p>
-                  </div>
-                ) : (
-                  <>
-                    <Upload className="mx-auto h-12 w-12 text-slate-400" />
-                    <div className="flex text-sm text-slate-600">
-                      <span>Subir un archivo</span>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Documentos, Imágenes, PDFs
-                    </p>
-                  </>
-                )}
+                <Upload className="mx-auto h-12 w-12 text-slate-400" />
+                <div className="flex text-sm text-slate-600 justify-center">
+                  <span className="font-medium text-primary">Seleccionar archivos</span>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Soporta selección de múltiples archivos simultáneamente
+                </p>
               </div>
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 className="hidden"
                 onChange={handleFileChange}
               />
             </div>
           </div>
+
+          {uploadQueue.length > 0 && (
+            <div className="max-h-60 overflow-y-auto border border-slate-100 rounded-lg divide-y divide-slate-50">
+              {uploadQueue.map((q, idx) => (
+                <div key={idx} className="p-3 flex items-center justify-between gap-3 bg-white">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {getFileIcon(q.file.type)}
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-slate-900 truncate">{q.file.name}</p>
+                      <p className="text-[10px] text-slate-500">{(q.file.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {q.status === 'uploading' && (
+                      <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-primary transition-all duration-300" 
+                          style={{ width: `${q.progress}%` }}
+                        />
+                      </div>
+                    )}
+                    {q.status === 'complete' && <span className="text-[10px] text-emerald-600 font-bold">✓</span>}
+                    {q.status === 'error' && <span className="text-[10px] text-rose-600 font-bold">Error</span>}
+                    {q.status === 'pending' && !uploading && (
+                      <button 
+                        onClick={() => setUploadQueue(prev => prev.filter((_, i) => i !== idx))}
+                        className="text-slate-400 hover:text-rose-600"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 mt-6">
             <button
@@ -388,14 +481,15 @@ export default function LibraryView() {
               Cancelar
             </button>
             <button
-              type="submit"
-              disabled={uploading || !formData.fileData}
+              type="button"
+              onClick={processUpload}
+              disabled={uploading || uploadQueue.length === 0 || uploadQueue.every(q => q.status === 'complete')}
               className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all font-medium flex items-center gap-2 disabled:opacity-50"
             >
-              {uploading ? 'Subiendo...' : 'Guardar'}
+              {uploading ? 'Subiendo...' : 'Subir Lote'}
             </button>
           </div>
-        </form>
+        </div>
       </Modal>
 
       {/* Preview Modal */}

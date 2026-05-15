@@ -16,6 +16,22 @@
         "companyLogo": { "type": "string" },
         "companyEmail": { "type": "string" },
         "companyWebsite": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "accessStatus": { "type": "string", "enum": ["pending", "approved", "denied"] },
+        "permissions": { 
+          "type": "object",
+          "properties": {
+            "dashboard": { "type": "boolean" },
+            "crm": { "type": "boolean" },
+            "inventory": { "type": "boolean" },
+            "operations": { "type": "boolean" },
+            "finance": { "type": "boolean" },
+            "documents": { "type": "boolean" },
+            "suppliers": { "type": "boolean" },
+            "hr": { "type": "boolean" },
+            "library": { "type": "boolean" }
+          }
+        },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email"]

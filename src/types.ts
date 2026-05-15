@@ -1,4 +1,4 @@
-export type Module = 'dashboard' | 'crm' | 'inventory' | 'operations' | 'finance' | 'documents' | 'suppliers' | 'hr' | 'library';
+export type Module = 'dashboard' | 'crm' | 'inventory' | 'operations' | 'finance' | 'documents' | 'suppliers' | 'hr' | 'library' | 'admin_users';
 
 export interface Item {
   id: string;
@@ -180,4 +180,24 @@ export interface RiskPreventionRecord {
   description: string;
   employeeId?: string;
   projectId?: string;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL: string;
+  companyName: string;
+  companyRut: string;
+  companyAddress: string;
+  companyPhone: string;
+  companyLogo: string;
+  companyEmail: string;
+  companyWebsite: string;
+  role: 'admin' | 'user';
+  accessStatus: 'pending' | 'approved' | 'denied';
+  permissions: {
+    [key: string]: boolean;
+  };
+  updatedAt: any;
 }

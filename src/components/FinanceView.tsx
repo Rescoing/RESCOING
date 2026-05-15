@@ -56,16 +56,19 @@ export default function FinanceView({
     const qInvoices = query(collection(db, 'invoices'), where('ownerId', '==', user.uid));
     const unsubInvoices = onSnapshot(qInvoices, (snapshot) => {
       setInvoices(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Invoice)));
-    });
+    }, (error) => console.error("Finance invoices error:", error));
 
     const qProcesses = query(collection(db, 'financeProcesses'), where('ownerId', '==', user.uid));
     const unsubProcesses = onSnapshot(qProcesses, (snapshot) => {
       setProcesses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinanceProcess)));
-    });
+    }, (error) => console.error("Finance processes error:", error));
 
     const qTasks = query(collection(db, 'financeTasks'), where('ownerId', '==', user.uid));
     const unsubTasks = onSnapshot(qTasks, (snapshot) => {
       setTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinanceTask)));
+      setLoading(false);
+    }, (error) => {
+      console.error("Finance tasks error:", error);
       setLoading(false);
     });
 

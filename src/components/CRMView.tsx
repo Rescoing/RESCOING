@@ -33,6 +33,9 @@ export default function CRMView({ autoOpen, onModalHandled }: CRMViewProps) {
       })) as Contact[];
       setContacts(docs);
       setLoading(false);
+    }, (error) => {
+      console.error("CRM contacts error:", error);
+      setLoading(false);
     });
 
     return unsubscribe;
