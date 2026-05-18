@@ -8,6 +8,11 @@ export interface Item {
   unit: string;
   sku: string;
   minStock: number;
+  brand?: string;
+  model?: string;
+  manufacturer?: string;
+  description?: string;
+  location?: string; // storage location within warehouse
 }
 
 export interface Contact {

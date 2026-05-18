@@ -1,5 +1,5 @@
 import React, { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
-import { Search, Plus, Filter, MoreVertical, AlertTriangle, Trash2, Upload, Download, FileSpreadsheet } from 'lucide-react';
+import { Search, Plus, Filter, MoreVertical, AlertTriangle, Trash2, Upload, Download, FileSpreadsheet, Edit, Package, Minus, Settings2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Item } from '../types';
 import Modal from './ui/Modal';
@@ -20,6 +20,10 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBulkLoading, setIsBulkLoading] = useState(false);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [isAdjustingStock, setIsAdjustingStock] = useState(false);
+  const [adjustmentValue, setAdjustmentValue] = useState(0);
+  const [adjustmentReason, setAdjustmentReason] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -57,7 +61,12 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
     category: '',
     stock: 0,
     minStock: 0,
-    unit: 'pza'
+    unit: 'pza',
+    brand: '',
+    model: '',
+    manufacturer: '',
+    description: '',
+    location: ''
   });
 
   const filteredItems = items.filter(item => 
@@ -77,20 +86,83 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
     if (!user) return;
 
     try {
-      const itemToAdd = {
+      const itemData = {
         ...newItem,
         sku: newItem.sku || generateSKU(),
         ownerId: user.uid,
-        createdAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        stock: Number(newItem.stock) || 0,
+        minStock: Number(newItem.minStock) || 0
       };
       
-      await addDoc(collection(db, 'inventory'), itemToAdd);
+      if (editingItem) {
+        await updateDoc(doc(db, 'inventory', editingItem.id), itemData);
+      } else {
+        await addDoc(collection(db, 'inventory'), {
+          ...itemData,
+          createdAt: serverTimestamp()
+        });
+      }
       
       setIsModalOpen(false);
-      setNewItem({ name: '', sku: '', category: '', stock: 0, minStock: 0, unit: 'pza' });
+      setEditingItem(null);
+      setNewItem({ 
+        name: '', sku: '', category: '', stock: 0, minStock: 0, unit: 'pza',
+        brand: '', model: '', manufacturer: '', description: '', location: ''
+      });
     } catch (error) {
-      console.error("Error adding item:", error);
+      console.error("Error saving item:", error);
       alert("Error al guardar el artículo");
+    }
+  };
+
+  const startEdit = (item: Item) => {
+    setEditingItem(item);
+    setNewItem({ ...item });
+    setIsModalOpen(true);
+  };
+
+  const startAdjustment = (item: Item) => {
+    setEditingItem(item);
+    setAdjustmentValue(0);
+    setAdjustmentReason('');
+    setIsAdjustingStock(true);
+  };
+
+  const handleStockAdjustment = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!editingItem || !user) return;
+
+    try {
+      const newStock = editingItem.stock + adjustmentValue;
+      if (newStock < 0) {
+        alert("El stock resultante no puede ser negativo.");
+        return;
+      }
+
+      await updateDoc(doc(db, 'inventory', editingItem.id), { 
+        stock: newStock,
+        lastAdjustmentReason: adjustmentReason,
+        lastAdjustmentValue: adjustmentValue,
+        updatedAt: serverTimestamp()
+      });
+
+      // Optionally log this movement to a separate collection 'inventory_movements'
+      await addDoc(collection(db, 'inventory_movements'), {
+        itemId: editingItem.id,
+        itemName: editingItem.name,
+        type: adjustmentValue > 0 ? 'in' : 'out',
+        quantity: Math.abs(adjustmentValue),
+        reason: adjustmentReason || 'Ajuste manual',
+        ownerId: user.uid,
+        timestamp: serverTimestamp()
+      });
+
+      setIsAdjustingStock(false);
+      setEditingItem(null);
+    } catch (error) {
+      console.error("Error adjusting stock:", error);
+      alert("Error al ajustar el stock");
     }
   };
 
@@ -136,6 +208,9 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
           const stock = parseInt(row.stock_inicial || row.stock || row.Stock) || 0;
           const minStock = parseInt(row.stock_minimo || row.min_stock || row.MinStock) || 0;
           const unit = row.unidad || row.Unit || 'pza';
+          const brand = row.marca || row.Marca || row.brand || row.Brand || '';
+          const model = row.modelo || row.Modelo || row.model || row.Model || '';
+          const manufacturer = row.fabricante || row.Fabricante || row.manufacturer || '';
 
           if (!name) continue; // Skip rows without name
 
@@ -147,6 +222,9 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
             stock,
             minStock,
             unit,
+            brand,
+            model,
+            manufacturer,
             ownerId: user.uid,
             createdAt: serverTimestamp()
           });
@@ -178,7 +256,10 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
         categoria: 'Ferretería', 
         stock_inicial: 100, 
         stock_minimo: 20, 
-        unidad: 'pza' 
+        unidad: 'pza',
+        marca: 'Standard',
+        modelo: 'HEX-2024',
+        fabricante: 'Ind. Metalúrgica'
       }
     ];
     const ws = XLSX.utils.json_to_sheet(template);
@@ -237,8 +318,15 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
 
       <Modal 
         isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        title="Agregar Nuevo Artículo"
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingItem(null);
+          setNewItem({ 
+            name: '', sku: '', category: '', stock: 0, minStock: 0, unit: 'pza',
+            brand: '', model: '', manufacturer: '', description: '', location: ''
+          });
+        }} 
+        title={editingItem ? "Editar Artículo" : "Agregar Nuevo Artículo"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -273,7 +361,34 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Stock Inicial</label>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Marca</label>
+              <input 
+                type="text" 
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                value={newItem.brand}
+                onChange={e => setNewItem({...newItem, brand: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Modelo</label>
+              <input 
+                type="text" 
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                value={newItem.model}
+                onChange={e => setNewItem({...newItem, model: e.target.value})}
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Fabricante</label>
+              <input 
+                type="text" 
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                value={newItem.manufacturer}
+                onChange={e => setNewItem({...newItem, manufacturer: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Stock {editingItem ? 'Actual' : 'Inicial'}</label>
               <input 
                 required
                 type="number" 
@@ -292,12 +407,111 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
                 onChange={e => setNewItem({...newItem, minStock: parseInt(e.target.value) || 0})}
               />
             </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Ubicación</label>
+              <input 
+                type="text" 
+                placeholder="Ej: Pasillo 2, Estante B"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                value={newItem.location}
+                onChange={e => setNewItem({...newItem, location: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Unidad</label>
+              <input 
+                type="text" 
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                value={newItem.unit}
+                onChange={e => setNewItem({...newItem, unit: e.target.value})}
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Descripción</label>
+              <textarea 
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm resize-none"
+                value={newItem.description}
+                onChange={e => setNewItem({...newItem, description: e.target.value})}
+              />
+            </div>
           </div>
           <button 
             type="submit"
             className="w-full bg-primary text-white py-2.5 rounded-lg font-bold text-sm shadow-sm hover:opacity-90 active:scale-95 transition-all mt-2"
           >
-            Guardar Artículo
+            {editingItem ? "Actualizar Artículo" : "Guardar Artículo"}
+          </button>
+        </form>
+      </Modal>
+
+      <Modal 
+        isOpen={isAdjustingStock} 
+        onClose={() => setIsAdjustingStock(false)} 
+        title={`Ajuste de Stock: ${editingItem?.name}`}
+      >
+        <form onSubmit={handleStockAdjustment} className="space-y-4">
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
+            <div className="text-sm font-medium text-slate-600">Stock Actual:</div>
+            <div className="text-xl font-mono font-bold text-slate-900">{editingItem?.stock} {editingItem?.unit}</div>
+          </div>
+          
+          <div className="space-y-1">
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Cantidad a Ajustar</label>
+            <div className="flex items-center gap-3">
+              <button 
+                type="button"
+                onClick={() => setAdjustmentValue(prev => prev - 1)}
+                className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors"
+              >
+                <Minus size={18} />
+              </button>
+              <input 
+                required
+                type="number" 
+                className="flex-1 px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-center font-mono font-bold text-lg"
+                value={adjustmentValue}
+                onChange={e => setAdjustmentValue(parseInt(e.target.value) || 0)}
+              />
+              <button 
+                type="button"
+                onClick={() => setAdjustmentValue(prev => prev + 1)}
+                className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors"
+              >
+                <Plus size={18} />
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">Usa valores negativos para rebajar stock (ej: consumo de propietario)</p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Motivo del Ajuste</label>
+            <select 
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+              value={adjustmentReason}
+              onChange={e => setAdjustmentReason(e.target.value)}
+              required
+            >
+              <option value="">Seleccionar motivo...</option>
+              <option value="Consumo Propietario">Consumo Propietario</option>
+              <option value="Ingreso de Compra">Ingreso de Compra</option>
+              <option value="Devolución">Devolución</option>
+              <option value="Merma o Daño">Merma o Daño</option>
+              <option value="Ajuste de Inventario">Ajuste de Inventario</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+
+          <div className="p-4 bg-primary/5 rounded-xl border border-primary/10 flex items-center justify-between">
+            <div className="text-sm font-medium text-primary">Nuevo Stock Resultante:</div>
+            <div className="text-xl font-mono font-bold text-primary">{(editingItem?.stock || 0) + adjustmentValue} {editingItem?.unit}</div>
+          </div>
+
+          <button 
+            type="submit"
+            className="w-full bg-primary text-white py-3 rounded-lg font-bold text-sm shadow-sm hover:opacity-90 active:scale-95 transition-all mt-2"
+          >
+            Confirmar Ajuste
           </button>
         </form>
       </Modal>
@@ -358,6 +572,7 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
                     <td className="p-4">
                       <div className="flex flex-col">
                         <span className="font-bold text-slate-900">{item.name}</span>
+                        {item.brand && <span className="text-[10px] text-slate-500 font-medium">{item.brand} {item.model}</span>}
                         <span className="text-[10px] text-slate-400 font-mono uppercase font-bold">{item.sku}</span>
                       </div>
                     </td>
@@ -380,10 +595,18 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => updateStock(item.id, item.stock + 1)}
-                          className="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors bg-slate-50 rounded"
+                          onClick={() => startAdjustment(item)}
+                          title="Gestionar Stock"
+                          className="p-1.5 text-slate-400 hover:text-primary transition-colors bg-slate-50 rounded"
                         >
-                          <Plus size={14} />
+                          <Settings2 size={14} />
+                        </button>
+                        <button 
+                          onClick={() => startEdit(item)}
+                          title="Editar Detalles"
+                          className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-slate-50 rounded"
+                        >
+                          <Edit size={14} />
                         </button>
                         <button 
                           onClick={() => handleDelete(item.id)}
