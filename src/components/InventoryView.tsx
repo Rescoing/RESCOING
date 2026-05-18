@@ -1,11 +1,12 @@
-import { useState, useEffect, FormEvent } from 'react';
-import { Search, Plus, Filter, MoreVertical, AlertTriangle, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
+import { Search, Plus, Filter, MoreVertical, AlertTriangle, Trash2, Upload, Download, FileSpreadsheet } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Item } from '../types';
 import Modal from './ui/Modal';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
+import * as XLSX from 'xlsx';
 
 interface InventoryViewProps {
   autoOpen?: boolean;
@@ -18,6 +19,8 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -93,6 +96,89 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
     await updateDoc(doc(db, 'inventory', id), { stock: newStock });
   };
 
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setIsBulkLoading(true);
+    const reader = new FileReader();
+
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+        if (data.length === 0) {
+          alert("El archivo está vacío o no tiene el formato correcto.");
+          setIsBulkLoading(false);
+          return;
+        }
+
+        const batch = writeBatch(db);
+        let count = 0;
+
+        for (const row of data) {
+          // Mapping columns (flexible with common names)
+          const name = row.nombre || row.Nombre || row.name || row.Name;
+          const sku = row.sku || row.SKU || row.codigo || row.Código;
+          const category = row.categoria || row.Categoría || row.category || row.Category;
+          const stock = parseInt(row.stock_inicial || row.stock || row.Stock) || 0;
+          const minStock = parseInt(row.stock_minimo || row.min_stock || row.MinStock) || 0;
+          const unit = row.unidad || row.Unit || 'pza';
+
+          if (!name || !sku) continue; // Skip incomplete rows
+
+          const newDocRef = doc(collection(db, 'inventory'));
+          batch.set(newDocRef, {
+            name,
+            sku,
+            category: category || 'Sin Categoría',
+            stock,
+            minStock,
+            unit,
+            ownerId: user.uid,
+            createdAt: serverTimestamp()
+          });
+
+          count++;
+          // Firestore batch limit is 500
+          if (count >= 499) break; 
+        }
+
+        await batch.commit();
+        alert(`Se han cargado ${count} artículos exitosamente.`);
+      } catch (error) {
+        console.error("Bulk upload error:", error);
+        alert("Error al procesar el archivo. Asegúrate de que sea un archivo Excel o CSV válido.");
+      } finally {
+        setIsBulkLoading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
+  const downloadTemplate = () => {
+    const template = [
+      { 
+        nombre: 'Ejemplo Tornillo 1/4', 
+        sku: 'FIX-001', 
+        categoria: 'Ferretería', 
+        stock_inicial: 100, 
+        stock_minimo: 20, 
+        unidad: 'pza' 
+      }
+    ];
+    const ws = XLSX.utils.json_to_sheet(template);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
+    XLSX.writeFile(wb, "plantilla_inventario.xlsx");
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -100,13 +186,45 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
           <h2 className="text-3xl font-bold tracking-tight text-slate-900">Inventario de Materiales</h2>
           <p className="text-slate-500 mt-1">Gestión centralizada de componentes y suministros críticos.</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:opacity-90 active:scale-95 transition-all"
-        >
-          <Plus size={18} />
-          Nuevo Artículo
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleBulkUpload} 
+            className="hidden" 
+            accept=".xlsx, .xls, .csv"
+          />
+          
+          <button 
+            onClick={downloadTemplate}
+            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:bg-slate-50 transition-all"
+            title="Descargar plantilla Excel"
+          >
+            <Download size={18} />
+            Plantilla
+          </button>
+
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isBulkLoading}
+            className="flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:bg-slate-200 transition-all disabled:opacity-50"
+          >
+            {isBulkLoading ? (
+              <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+            ) : (
+              <Upload size={18} />
+            )}
+            Carga Masiva
+          </button>
+
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:opacity-90 active:scale-95 transition-all"
+          >
+            <Plus size={18} />
+            Nuevo Artículo
+          </button>
+        </div>
       </div>
 
       <Modal 
