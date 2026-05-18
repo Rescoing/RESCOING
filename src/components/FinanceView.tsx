@@ -274,6 +274,11 @@ export default function FinanceView({
     doc.save(`Reporte_Financiero_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
+  const totalBilling = invoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+  const totalPaid = invoices.filter(i => i.status === 'Pagado').reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+  const totalPending = invoices.filter(i => i.status === 'Pendiente').reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+  const totalOverdue = invoices.filter(i => i.status === 'Vencido').reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 text-sm font-sans">
@@ -348,34 +353,34 @@ export default function FinanceView({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-mono">
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-all hover:border-slate-300">
                 <div className="flex justify-between items-center mb-6">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Facturado Mes</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Total Facturado</p>
                   <div className="p-1 px-2 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-1">
-                    <ArrowUpRight size={12} />
-                    <span className="text-[10px] font-bold">12.4%</span>
+                    <FileCheck size={12} />
+                    <span className="text-[10px] font-bold">{invoices.length} Docs</span>
                   </div>
                 </div>
-                <h3 className="text-3xl font-bold text-slate-900">$124,500.00</h3>
+                <h3 className="text-3xl font-bold text-slate-900">${totalBilling.toLocaleString()}</h3>
               </div>
               
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-all hover:border-slate-300">
                 <div className="flex justify-between items-center mb-6">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Gastos Operativos</p>
-                  <div className="p-1 px-2 rounded-full bg-rose-50 text-rose-600 border border-rose-100 flex items-center gap-1">
-                    <ArrowDownLeft size={12} />
-                    <span className="text-[10px] font-bold">2.1%</span>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Pendiente de Cobro</p>
+                  <div className="p-1 px-2 rounded-full bg-amber-50 text-amber-600 border border-amber-100 flex items-center gap-1">
+                    <Clock size={12} />
+                    <span className="text-[10px] font-bold">{invoices.filter(i => i.status === 'Pendiente').length} Pend.</span>
                   </div>
                 </div>
-                <h3 className="text-3xl font-bold text-slate-900">$82,140.20</h3>
+                <h3 className="text-3xl font-bold text-slate-900">${totalPending.toLocaleString()}</h3>
               </div>
-
+ 
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-lg ring-1 ring-primary/5">
                 <div className="flex justify-between items-center mb-6">
-                  <p className="text-[10px] font-bold text-primary uppercase tracking-widest font-sans">Balance Neto</p>
-                  <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
-                    <DollarSign size={16} />
+                  <p className="text-[10px] font-bold text-primary uppercase tracking-widest font-sans">Recaudado (Pagado)</p>
+                  <div className="p-1.5 rounded-lg bg-emerald-500 text-white shadow-sm">
+                    <CheckCircle2 size={16} />
                   </div>
                 </div>
-                <h3 className="text-3xl font-bold text-primary">$42,359.80</h3>
+                <h3 className="text-3xl font-bold text-primary">${totalPaid.toLocaleString()}</h3>
               </div>
             </div>
 

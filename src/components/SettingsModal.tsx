@@ -1,5 +1,5 @@
-import { useState, FormEvent } from 'react';
-import { X, Save, Building2, Upload, Trash2 } from 'lucide-react';
+import { useState, FormEvent, useEffect, ChangeEvent } from 'react';
+import { X, Save, Building2, Upload, Trash2, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './FirebaseProvider';
 
@@ -12,14 +12,43 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { profile, updateProfile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    companyName: profile?.companyName || '',
-    companyRut: profile?.companyRut || '',
-    companyAddress: profile?.companyAddress || '',
-    companyPhone: profile?.companyPhone || '',
-    companyEmail: profile?.companyEmail || '',
-    companyWebsite: profile?.companyWebsite || '',
-    companyLogo: profile?.companyLogo || ''
+    companyName: '',
+    companyRut: '',
+    companyAddress: '',
+    companyPhone: '',
+    companyEmail: '',
+    companyWebsite: '',
+    companyLogo: ''
   });
+
+  useEffect(() => {
+    if (profile && isOpen) {
+      setFormData({
+        companyName: profile.companyName || '',
+        companyRut: profile.companyRut || '',
+        companyAddress: profile.companyAddress || '',
+        companyPhone: profile.companyPhone || '',
+        companyEmail: profile.companyEmail || '',
+        companyWebsite: profile.companyWebsite || '',
+        companyLogo: profile.companyLogo || ''
+      });
+    }
+  }, [profile, isOpen]);
+
+  const handleLogoUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert('El logo no debe exceder los 2MB');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, companyLogo: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -104,21 +133,41 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       placeholder="Ej: Av. Principal 1234, Santiago"
                     />
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Logo de la Empresa (URL)</label>
-                    <div className="flex gap-2">
-                       <input
-                        type="text"
-                        className="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 outline-none transition-all text-xs"
-                        value={formData.companyLogo}
-                        onChange={(e) => setFormData({ ...formData, companyLogo: e.target.value })}
-                        placeholder="https://..."
-                      />
-                      {formData.companyLogo && (
-                        <div className="w-12 h-12 rounded-xl border border-slate-200 overflow-hidden shrink-0 bg-slate-50">
-                          <img src={formData.companyLogo} alt="Preview" className="w-full h-full object-contain" />
+                  <div className="col-span-2">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Logo de la Empresa</label>
+                    <div className="flex items-center gap-6 p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                      <div className="relative group">
+                        <div className="w-24 h-24 rounded-xl border-2 border-white shadow-md overflow-hidden bg-white flex items-center justify-center">
+                          {formData.companyLogo ? (
+                            <img src={formData.companyLogo} alt="Logo preview" className="w-full h-full object-contain" />
+                          ) : (
+                            <ImageIcon size={32} className="text-slate-200" />
+                          )}
                         </div>
-                      )}
+                        {formData.companyLogo && (
+                          <button 
+                            type="button"
+                            onClick={() => setFormData({ ...formData, companyLogo: '' })}
+                            className="absolute -top-2 -right-2 p-1 bg-rose-500 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                      
+                      <div className="flex-1 space-y-2">
+                        <label className="inline-flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer transition-all shadow-sm">
+                          <Upload size={14} />
+                          Subir Imagen
+                          <input 
+                            type="file" 
+                            className="hidden" 
+                            accept="image/*"
+                            onChange={handleLogoUpload}
+                          />
+                        </label>
+                        <p className="text-[10px] text-slate-400 px-1 italic">JPG, PNG o SVG. Máx 2MB. Se recomienda fondo transparente.</p>
+                      </div>
                     </div>
                   </div>
                 </div>

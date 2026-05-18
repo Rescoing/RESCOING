@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
 import { Clock, CheckCircle2, AlertCircle, Plus, Edit2, Trash2, ListChecks, FileText, ShieldAlert, ChevronRight, Save, Flame, HelpCircle, Upload, File, MoreVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Project, ProjectTask, RiskPreventionRecord, ProjectDocument } from '../types';
+import { Project, ProjectTask, RiskPreventionRecord, ProjectDocument, Contact } from '../types';
 import Modal from './ui/Modal';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -10,9 +10,10 @@ import { useAuth } from './FirebaseProvider';
 interface OperationsViewProps {
   autoOpen?: boolean;
   onModalHandled?: () => void;
+  contacts: Contact[];
 }
 
-export default function OperationsView({ autoOpen, onModalHandled }: OperationsViewProps) {
+export default function OperationsView({ autoOpen, onModalHandled, contacts }: OperationsViewProps) {
   const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [riskRecords, setRiskRecords] = useState<RiskPreventionRecord[]>([]);
@@ -60,6 +61,7 @@ export default function OperationsView({ autoOpen, onModalHandled }: OperationsV
 
   const [formProject, setFormProject] = useState<Partial<Project>>({
     name: '',
+    clientId: '',
     location: '',
     clientResponsible: '',
     status: 'active',
@@ -95,6 +97,7 @@ export default function OperationsView({ autoOpen, onModalHandled }: OperationsV
     setEditingProject(null);
     setFormProject({
       name: '',
+      clientId: '',
       location: '',
       clientResponsible: '',
       status: 'active',
@@ -253,6 +256,27 @@ export default function OperationsView({ autoOpen, onModalHandled }: OperationsV
                 value={formProject.name}
                 onChange={e => setFormProject({...formProject, name: e.target.value})}
               />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Cliente (Referencia CRM)</label>
+              <select 
+                required
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm bg-white"
+                value={formProject.clientId}
+                onChange={e => {
+                  const client = contacts.find(c => c.id === e.target.value);
+                  setFormProject({
+                    ...formProject, 
+                    clientId: e.target.value,
+                    clientResponsible: client ? client.name : formProject.clientResponsible
+                  });
+                }}
+              >
+                <option value="">Seleccione un cliente...</option>
+                {contacts.map(c => (
+                  <option key={c.id} value={c.id}>{c.company} ({c.name})</option>
+                ))}
+              </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

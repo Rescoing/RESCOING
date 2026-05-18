@@ -24,6 +24,7 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
   const [isAdjustingStock, setIsAdjustingStock] = useState(false);
   const [adjustmentValue, setAdjustmentValue] = useState(0);
   const [adjustmentReason, setAdjustmentReason] = useState('');
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -317,6 +318,80 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
       </div>
 
       <Modal 
+        isOpen={isDetailModalOpen} 
+        onClose={() => { setIsDetailModalOpen(false); setEditingItem(null); }} 
+        title="Detalles del Artículo"
+      >
+        {editingItem && (
+          <div className="space-y-6 font-sans">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="md:col-span-2 p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="px-2 py-1 bg-primary/10 text-primary rounded text-[10px] font-bold uppercase tracking-widest">{editingItem.category}</span>
+                  <span className="font-mono text-xs font-bold text-slate-400">{editingItem.sku}</span>
+                </div>
+                <h3 className="text-2xl font-bold text-slate-900">{editingItem.name}</h3>
+                {editingItem.description && <p className="text-sm text-slate-500 mt-2 italic">"{editingItem.description}"</p>}
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-1">Especificación Técnica</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Marca:</span>
+                    <span className="font-semibold text-slate-900">{editingItem.brand || '---'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Modelo:</span>
+                    <span className="font-semibold text-slate-900">{editingItem.model || '---'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Fabricante:</span>
+                    <span className="font-semibold text-slate-900">{editingItem.manufacturer || '---'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-1">Estado de Almacén</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Stock Disponible:</span>
+                    <span className={`font-bold ${editingItem.stock <= editingItem.minStock ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {editingItem.stock} {editingItem.unit}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Stock Mínimo:</span>
+                    <span className="font-semibold text-slate-900">{editingItem.minStock} {editingItem.unit}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Ubicación:</span>
+                    <span className="font-semibold text-slate-900">{editingItem.location || 'No especificada'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <button 
+                onClick={() => { setIsDetailModalOpen(false); startAdjustment(editingItem); }}
+                className="flex-1 bg-slate-900 text-white py-2.5 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-slate-800"
+              >
+                Ajustar Stock
+              </button>
+              <button 
+                onClick={() => { setIsDetailModalOpen(false); startEdit(editingItem); }}
+                className="flex-1 bg-white border border-slate-200 text-slate-600 py-2.5 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-slate-50"
+              >
+                Editar Ficha
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal 
         isOpen={isModalOpen} 
         onClose={() => {
           setIsModalOpen(false);
@@ -567,7 +642,8 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.05 }}
-                    className="hover:bg-slate-50/50 transition-colors"
+                    className="hover:bg-slate-50/50 transition-colors cursor-pointer group"
+                    onClick={() => { setEditingItem(item); setIsDetailModalOpen(true); }}
                   >
                     <td className="p-4">
                       <div className="flex flex-col">
@@ -595,21 +671,21 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => startAdjustment(item)}
+                          onClick={(e) => { e.stopPropagation(); startAdjustment(item); }}
                           title="Gestionar Stock"
                           className="p-1.5 text-slate-400 hover:text-primary transition-colors bg-slate-50 rounded"
                         >
                           <Settings2 size={14} />
                         </button>
                         <button 
-                          onClick={() => startEdit(item)}
+                          onClick={(e) => { e.stopPropagation(); startEdit(item); }}
                           title="Editar Detalles"
                           className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-slate-50 rounded"
                         >
                           <Edit size={14} />
                         </button>
                         <button 
-                          onClick={() => handleDelete(item.id)}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
                           className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-slate-50 rounded"
                         >
                           <Trash2 size={14} />

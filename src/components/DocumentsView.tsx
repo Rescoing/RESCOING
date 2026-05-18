@@ -14,7 +14,8 @@ import {
   ChevronRight,
   User,
   Calculator,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Trash2
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Document, Contact } from '../types';
@@ -58,6 +59,9 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
   const [newDoc, setNewDoc] = useState<Partial<Document>>({
     clientId: '',
     clientName: '',
+    projectId: '',
+    projectType: '',
+    items: [],
     netAmount: 0,
     iva: 0,
     totalAmount: 0,
@@ -66,6 +70,74 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
     siiFolio: '',
     notes: ''
   });
+
+  const [availableItems, setAvailableItems] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'inventory'), where('ownerId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setAvailableItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return unsubscribe;
+  }, [user]);
+
+  const addItem = (type: 'material' | 'labor' | 'transfer' | 'other') => {
+    const newItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      type,
+      description: '',
+      quantity: 1,
+      price: 0,
+      total: 0
+    };
+    setNewDoc(prev => ({
+      ...prev,
+      items: [...(prev.items || []), newItem]
+    }));
+  };
+
+  const updateItem = (id: string, updates: any) => {
+    setNewDoc(prev => {
+      const items = (prev.items || []).map(item => {
+        if (item.id === id) {
+          const updatedItem = { ...item, ...updates };
+          updatedItem.total = updatedItem.quantity * updatedItem.price;
+          return updatedItem;
+        }
+        return item;
+      });
+      
+      const netAmount = items.reduce((sum, item) => sum + item.total, 0);
+      const iva = Math.round(netAmount * 0.19);
+      const totalAmount = netAmount + iva;
+
+      return {
+        ...prev,
+        items,
+        netAmount,
+        iva,
+        totalAmount
+      };
+    });
+  };
+
+  const removeItem = (id: string) => {
+    setNewDoc(prev => {
+      const items = (prev.items || []).filter(item => item.id !== id);
+      const netAmount = items.reduce((sum, item) => sum + item.total, 0);
+      const iva = Math.round(netAmount * 0.19);
+      const totalAmount = netAmount + iva;
+
+      return {
+        ...prev,
+        items,
+        netAmount,
+        iva,
+        totalAmount
+      };
+    });
+  };
 
   useEffect(() => {
     if (rutLookup) {
@@ -107,6 +179,9 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
         folio: generateFolio(activeTab),
         clientId: newDoc.clientId || '',
         clientName: newDoc.clientName || '',
+        projectId: newDoc.projectId || '',
+        projectType: newDoc.projectType || '',
+        items: newDoc.items || [],
         date: new Date().toLocaleDateString('es-ES'),
         netAmount: newDoc.netAmount || 0,
         iva: newDoc.iva || 0,
@@ -115,6 +190,7 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
         paymentMethod: newDoc.paymentMethod || 'transfer',
         siiFolio: newDoc.siiFolio || '',
         notes: newDoc.notes || '',
+        linkedDocId: newDoc.linkedDocId || '',
         ownerId: user.uid,
         createdAt: serverTimestamp()
       });
@@ -260,6 +336,16 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Tipo de Proyecto</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej: Instalación Eléctrica, Mantención, etc."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                  value={newDoc.projectType}
+                  onChange={e => setNewDoc({...newDoc, projectType: e.target.value})}
+                />
+              </div>
+              <div className="col-span-2">
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
                   <User size={12} className="text-primary" />
                   RUT de Búsqueda (Empresa o Contacto)
@@ -289,20 +375,138 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
               </div>
             </div>
 
-            {activeTab === 'invoice' && (
+            {activeTab !== 'quotation' && (
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
                   <Calculator size={12} className="text-primary" />
-                  Vincular Documento Previo (Cotización / OC / NV)
+                  Vincular Documento Previo (Flujo de Trabajo)
                 </label>
-                <select className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm bg-white">
+                <select 
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm bg-white"
+                  value={newDoc.linkedDocId}
+                  onChange={e => {
+                    const linked = documents.find(d => d.id === e.target.value);
+                    if (linked) {
+                      setNewDoc({
+                        ...newDoc,
+                        linkedDocId: linked.id,
+                        clientId: linked.clientId,
+                        clientName: linked.clientName,
+                        projectType: linked.projectType || newDoc.projectType,
+                        items: [...(linked.items || [])],
+                        netAmount: linked.netAmount,
+                        iva: linked.iva,
+                        totalAmount: linked.totalAmount
+                      });
+                    } else {
+                      setNewDoc({...newDoc, linkedDocId: ''});
+                    }
+                  }}
+                >
                   <option value="">Ninguno - Ingreso Manual</option>
-                  {documents.filter(d => d.clientId === newDoc.clientId && d.type !== 'invoice').map(d => (
-                    <option key={d.id} value={d.id}>{d.folio} - ${d.totalAmount.toLocaleString()}</option>
+                  {documents.filter(d => 
+                    (newDoc.clientId ? d.clientId === newDoc.clientId : true) && 
+                    d.type !== activeTab
+                  ).map(d => (
+                    <option key={d.id} value={d.id}>{d.folio} ({DOCUMENT_TYPES.find(t => t.id === d.type)?.label}) - ${d.totalAmount.toLocaleString()}</option>
                   ))}
                 </select>
+                <p className="mt-1 text-[10px] text-slate-400 italic">Al vincular, se heredarán los datos y conceptos del documento anterior.</p>
               </div>
             )}
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Desglose de Conceptos</h4>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => addItem('material')} className="px-2 py-1 bg-primary/10 text-primary rounded text-[10px] font-bold hover:bg-primary/20 flex items-center gap-1">
+                    <Plus size={10} /> Material
+                  </button>
+                  <button type="button" onClick={() => addItem('labor')} className="px-2 py-1 bg-amber-100 text-amber-700 rounded text-[10px] font-bold hover:bg-amber-200 flex items-center gap-1">
+                    <Plus size={10} /> Mano Obra
+                  </button>
+                  <button type="button" onClick={() => addItem('transfer')} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-[10px] font-bold hover:bg-blue-200 flex items-center gap-1">
+                    <Plus size={10} /> Traslado
+                  </button>
+                  <button type="button" onClick={() => addItem('other')} className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-[10px] font-bold hover:bg-slate-200 flex items-center gap-1">
+                    <Plus size={10} /> Otros
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2 border border-slate-100 rounded-lg p-2 bg-slate-50/50">
+                {newDoc.items?.map((item) => (
+                  <div key={item.id} className="grid grid-cols-12 gap-2 items-center bg-white p-2 rounded border border-slate-100 shadow-sm">
+                    <div className="col-span-3">
+                      {item.type === 'material' ? (
+                        <select 
+                          className="w-full text-xs p-1 border rounded"
+                          value={item.refId}
+                          onChange={e => {
+                            const inv = availableItems.find(i => i.id === e.target.value);
+                            updateItem(item.id, { refId: e.target.value, description: inv?.name || '' });
+                          }}
+                        >
+                          <option value="">Seleccionar Material...</option>
+                          {availableItems.map(i => (
+                            <option key={i.id} value={i.id}>{i.name} ({i.stock} {i.unit})</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input 
+                          type="text" 
+                          placeholder="Descripción..."
+                          className="w-full text-xs p-1 border rounded"
+                          value={item.description}
+                          onChange={e => updateItem(item.id, { description: e.target.value })}
+                        />
+                      )}
+                    </div>
+                    <div className="col-span-2 text-center">
+                      <span className={`text-[8px] font-bold px-1 rounded uppercase ${
+                        item.type === 'material' ? 'bg-primary/10 text-primary' :
+                        item.type === 'labor' ? 'bg-amber-100 text-amber-700' :
+                        item.type === 'transfer' ? 'bg-blue-100 text-blue-700' :
+                        'bg-slate-100 text-slate-700'
+                      }`}>
+                        {item.type}
+                      </span>
+                    </div>
+                    <div className="col-span-2">
+                      <input 
+                        type="number" 
+                        placeholder="Cant."
+                        className="w-full text-xs p-1 border rounded font-mono"
+                        value={item.quantity}
+                        onChange={e => updateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input 
+                        type="number" 
+                        placeholder="Precio"
+                        className="w-full text-xs p-1 border rounded font-mono"
+                        value={item.price}
+                        onChange={e => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
+                      />
+                    </div>
+                    <div className="col-span-2 font-mono text-[10px] font-bold text-slate-900 text-right pr-2">
+                      ${item.total.toLocaleString()}
+                    </div>
+                    <div className="col-span-1 text-right">
+                      <button type="button" onClick={() => removeItem(item.id)} className="text-slate-300 hover:text-rose-500 transition-colors">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {(!newDoc.items || newDoc.items.length === 0) && (
+                  <div className="text-center py-4 text-slate-400 text-[10px] font-bold uppercase tracking-widest italic">
+                    Agregue materiales o servicios para calcular el total
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
               <div>

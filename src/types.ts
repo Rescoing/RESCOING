@@ -48,6 +48,7 @@ export interface ProjectDocument {
 export interface Project {
   id: string;
   name: string;
+  clientId: string;
   location: string;
   clientResponsible: string;
   status: 'active' | 'delayed' | 'completed' | 'on-hold';
@@ -73,6 +74,16 @@ export interface Invoice {
   paymentMethod?: 'Transferencia' | 'Efectivo' | 'Tarjeta' | 'Cheque';
 }
 
+export interface DocumentItem {
+  id: string;
+  type: 'material' | 'labor' | 'transfer' | 'other';
+  description: string;
+  quantity: number;
+  price: number;
+  total: number;
+  refId?: string; // Reference to inventory item if material
+}
+
 export interface Document {
   id: string;
   type: 'quotation' | 'purchase_order' | 'sales_note' | 'invoice' | 'payment_status';
@@ -80,7 +91,9 @@ export interface Document {
   clientId: string;
   clientName: string;
   projectId?: string;
+  projectType?: string;
   date: string;
+  items: DocumentItem[];
   netAmount: number;
   iva: number;
   totalAmount: number;
@@ -88,6 +101,7 @@ export interface Document {
   paymentMethod?: 'transfer' | 'check' | 'cash' | 'card';
   siiFolio?: string;
   notes?: string;
+  linkedDocId?: string; // Reference to previous document in flow
 }
 
 export interface FinanceTask {

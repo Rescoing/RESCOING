@@ -318,6 +318,7 @@ function AppContent() {
                 <OperationsView 
                   autoOpen={autoOpenModal} 
                   onModalHandled={() => setAutoOpenModal(false)} 
+                  contacts={contacts}
                 />
               )}
               {activeModule === 'finance' && hasPermission('finance') && (
