@@ -67,7 +67,10 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
     model: '',
     manufacturer: '',
     description: '',
-    location: ''
+    location: '',
+    netPrice: 0,
+    iva: 0,
+    totalPrice: 0
   });
 
   const filteredItems = items.filter(item => 
@@ -93,7 +96,10 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
         ownerId: user.uid,
         updatedAt: serverTimestamp(),
         stock: Number(newItem.stock) || 0,
-        minStock: Number(newItem.minStock) || 0
+        minStock: Number(newItem.minStock) || 0,
+        netPrice: Number(newItem.netPrice) || 0,
+        iva: Math.round((Number(newItem.netPrice) || 0) * 0.19),
+        totalPrice: Math.round((Number(newItem.netPrice) || 0) * 1.19)
       };
       
       if (editingItem) {
@@ -109,7 +115,8 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
       setEditingItem(null);
       setNewItem({ 
         name: '', sku: '', category: '', stock: 0, minStock: 0, unit: 'pza',
-        brand: '', model: '', manufacturer: '', description: '', location: ''
+        brand: '', model: '', manufacturer: '', description: '', location: '',
+        netPrice: 0, iva: 0, totalPrice: 0
       });
     } catch (error) {
       console.error("Error saving item:", error);
@@ -212,6 +219,7 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
           const brand = row.marca || row.Marca || row.brand || row.Brand || '';
           const model = row.modelo || row.Modelo || row.model || row.Model || '';
           const manufacturer = row.fabricante || row.Fabricante || row.manufacturer || '';
+          const netPrice = parseFloat(row.precio_neto || row.net_price || row.price || 0);
 
           if (!name) continue; // Skip rows without name
 
@@ -226,6 +234,9 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
             brand,
             model,
             manufacturer,
+            netPrice,
+            iva: Math.round(netPrice * 0.19),
+            totalPrice: Math.round(netPrice * 1.19),
             ownerId: user.uid,
             createdAt: serverTimestamp()
           });
@@ -260,7 +271,8 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
         unidad: 'pza',
         marca: 'Standard',
         modelo: 'HEX-2024',
-        fabricante: 'Ind. Metalúrgica'
+        fabricante: 'Ind. Metalúrgica',
+        precio_neto: 1500
       }
     ];
     const ws = XLSX.utils.json_to_sheet(template);
@@ -353,6 +365,24 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
               </div>
 
               <div className="space-y-4">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-1">Valores y Precios</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Precio Neto:</span>
+                    <span className="font-bold text-slate-900">${(editingItem.netPrice || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-[10px]">
+                    <span className="text-slate-400">IVA (19%):</span>
+                    <span className="font-medium text-slate-500">${(editingItem.iva || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-sm border-t pt-1 mt-1">
+                    <span className="text-slate-600 font-bold">Total:</span>
+                    <span className="font-bold text-primary">${(editingItem.totalPrice || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-1">Estado de Almacén</h4>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
@@ -398,7 +428,8 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
           setEditingItem(null);
           setNewItem({ 
             name: '', sku: '', category: '', stock: 0, minStock: 0, unit: 'pza',
-            brand: '', model: '', manufacturer: '', description: '', location: ''
+            brand: '', model: '', manufacturer: '', description: '', location: '',
+            netPrice: 0, iva: 0, totalPrice: 0
           });
         }} 
         title={editingItem ? "Editar Artículo" : "Agregar Nuevo Artículo"}
@@ -414,6 +445,30 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
                 value={newItem.name}
                 onChange={e => setNewItem({...newItem, name: e.target.value})}
               />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Precio Neto ($)</label>
+              <input 
+                required
+                type="number" 
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm font-mono font-bold text-primary"
+                value={newItem.netPrice}
+                onChange={e => {
+                  const net = parseFloat(e.target.value) || 0;
+                  setNewItem({
+                    ...newItem, 
+                    netPrice: net,
+                    iva: Math.round(net * 0.19),
+                    totalPrice: Math.round(net * 1.19)
+                  });
+                }}
+              />
+            </div>
+            <div className="flex gap-2 items-center pt-5">
+               <div className="flex-1">
+                 <span className="block text-[8px] font-bold text-slate-400 uppercase">IVA: ${(newItem.iva || 0).toLocaleString()}</span>
+                 <span className="block text-[8px] font-bold text-slate-600 uppercase">Total: ${(newItem.totalPrice || 0).toLocaleString()}</span>
+               </div>
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">SKU / Código (Auto si vacío)</label>
@@ -615,6 +670,7 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
               <tr className="bg-slate-50/50 border-b border-slate-100">
                 <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Artículo</th>
                 <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Categoría</th>
+                <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400 text-right">Precio Neto</th>
                 <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Stock Actual</th>
                 <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Estado</th>
                 <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400 text-right">Acciones</th>
@@ -653,6 +709,9 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
                       </div>
                     </td>
                     <td className="p-4 text-sm text-slate-600 font-medium">{item.category}</td>
+                    <td className="p-4 text-right">
+                      <span className="font-mono text-sm font-bold text-slate-900">${(item.netPrice || 0).toLocaleString()}</span>
+                    </td>
                     <td className="p-4">
                       <span className="font-mono text-sm font-bold text-slate-700">{item.stock} {item.unit}</span>
                     </td>

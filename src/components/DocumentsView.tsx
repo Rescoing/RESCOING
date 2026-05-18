@@ -444,7 +444,11 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
                           value={item.refId}
                           onChange={e => {
                             const inv = availableItems.find(i => i.id === e.target.value);
-                            updateItem(item.id, { refId: e.target.value, description: inv?.name || '' });
+                            updateItem(item.id, { 
+                              refId: e.target.value, 
+                              description: inv?.name || '',
+                              price: inv?.netPrice || 0
+                            });
                           }}
                         >
                           <option value="">Seleccionar Material...</option>

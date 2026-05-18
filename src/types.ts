@@ -13,6 +13,9 @@ export interface Item {
   manufacturer?: string;
   description?: string;
   location?: string; // storage location within warehouse
+  netPrice?: number;
+  iva?: number;
+  totalPrice?: number;
 }
 
 export interface Contact {
