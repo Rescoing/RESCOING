@@ -65,6 +65,13 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
     item.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const generateSKU = () => {
+    const prefix = 'SKU';
+    const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `${prefix}-${datePart}-${randomPart}`;
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -72,6 +79,7 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
     try {
       const itemToAdd = {
         ...newItem,
+        sku: newItem.sku || generateSKU(),
         ownerId: user.uid,
         createdAt: serverTimestamp()
       };
@@ -123,18 +131,18 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
         for (const row of data) {
           // Mapping columns (flexible with common names)
           const name = row.nombre || row.Nombre || row.name || row.Name;
-          const sku = row.sku || row.SKU || row.codigo || row.Código;
+          const skuFromRow = row.sku || row.SKU || row.codigo || row.Código;
           const category = row.categoria || row.Categoría || row.category || row.Category;
           const stock = parseInt(row.stock_inicial || row.stock || row.Stock) || 0;
           const minStock = parseInt(row.stock_minimo || row.min_stock || row.MinStock) || 0;
           const unit = row.unidad || row.Unit || 'pza';
 
-          if (!name || !sku) continue; // Skip incomplete rows
+          if (!name) continue; // Skip rows without name
 
           const newDocRef = doc(collection(db, 'inventory'));
           batch.set(newDocRef, {
             name,
-            sku,
+            sku: skuFromRow || generateSKU(),
             category: category || 'Sin Categoría',
             stock,
             minStock,
@@ -245,12 +253,12 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">SKU / Código</label>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">SKU / Código (Auto si vacío)</label>
               <input 
-                required
                 type="text" 
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm placeholder:text-slate-300"
                 value={newItem.sku}
+                placeholder="Auto-generar..."
                 onChange={e => setNewItem({...newItem, sku: e.target.value})}
               />
             </div>
