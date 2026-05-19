@@ -99,7 +99,8 @@ export default function FinanceView({
     iva: 0,
     totalAmount: 0,
     paymentMethod: 'Transferencia',
-    date: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
+    date: new Date().toISOString().split('T')[0],
+    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   });
 
   const [newProcess, setNewProcess] = useState<Partial<FinanceProcess>>({
@@ -131,7 +132,16 @@ export default function FinanceView({
         createdAt: serverTimestamp()
       });
       setIsModalOpen(false);
-      setNewInvoice({ client: '', status: 'Pendiente', netAmount: 0, iva: 0, totalAmount: 0, paymentMethod: 'Transferencia', date: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) });
+      setNewInvoice({ 
+        client: '', 
+        status: 'Pendiente', 
+        netAmount: 0, 
+        iva: 0, 
+        totalAmount: 0, 
+        paymentMethod: 'Transferencia', 
+        date: new Date().toISOString().split('T')[0],
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      });
     } catch (error) {
       console.error(error);
     }
@@ -279,6 +289,14 @@ export default function FinanceView({
   const totalPending = invoices.filter(i => i.status === 'Pendiente').reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
   const totalOverdue = invoices.filter(i => i.status === 'Vencido').reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
 
+  const overdueInvoices = invoices.filter(inv => {
+    if (inv.status === 'Vencido') return true;
+    if (inv.status === 'Pendiente' && inv.dueDate) {
+      return new Date(inv.dueDate) < new Date();
+    }
+    return false;
+  });
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 text-sm font-sans">
@@ -350,29 +368,40 @@ export default function FinanceView({
             exit={{ opacity: 0, x: 20 }}
             className="space-y-8"
           >
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-mono">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 font-mono">
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-all hover:border-slate-300">
                 <div className="flex justify-between items-center mb-6">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Total Facturado</p>
-                  <div className="p-1 px-2 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-1">
-                    <FileCheck size={12} />
+                  <div className="p-1 px-2 rounded-full bg-slate-50 text-slate-600 border border-slate-100 flex items-center gap-1">
+                    <FileText size={12} />
                     <span className="text-[10px] font-bold">{invoices.length} Docs</span>
                   </div>
                 </div>
-                <h3 className="text-3xl font-bold text-slate-900">${totalBilling.toLocaleString()}</h3>
+                <h3 className="text-2xl font-bold text-slate-900">${totalBilling.toLocaleString()}</h3>
               </div>
               
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-all hover:border-slate-300">
                 <div className="flex justify-between items-center mb-6">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Pendiente de Cobro</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Pendiente (Vigente)</p>
                   <div className="p-1 px-2 rounded-full bg-amber-50 text-amber-600 border border-amber-100 flex items-center gap-1">
                     <Clock size={12} />
                     <span className="text-[10px] font-bold">{invoices.filter(i => i.status === 'Pendiente').length} Pend.</span>
                   </div>
                 </div>
-                <h3 className="text-3xl font-bold text-slate-900">${totalPending.toLocaleString()}</h3>
+                <h3 className="text-2xl font-bold text-slate-900">${totalPending.toLocaleString()}</h3>
               </div>
- 
+
+              <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm transition-all hover:border-rose-300 bg-rose-50/10">
+                <div className="flex justify-between items-center mb-6">
+                  <p className="text-[10px] font-bold text-rose-600 uppercase tracking-widest font-sans underline decoration-rose-200 underline-offset-4">Vencido (Overdue)</p>
+                  <div className="p-1 px-2 rounded-full bg-rose-100 text-rose-600 border border-rose-200 flex items-center gap-1">
+                    <AlertTriangle size={12} />
+                    <span className="text-[10px] font-bold">{overdueInvoices.length} Venc.</span>
+                  </div>
+                </div>
+                <h3 className="text-2xl font-bold text-rose-600">${overdueInvoices.reduce((sum, i) => sum + (i.totalAmount || 0), 0).toLocaleString()}</h3>
+              </div>
+  
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-lg ring-1 ring-primary/5">
                 <div className="flex justify-between items-center mb-6">
                   <p className="text-[10px] font-bold text-primary uppercase tracking-widest font-sans">Recaudado (Pagado)</p>
@@ -380,7 +409,7 @@ export default function FinanceView({
                     <CheckCircle2 size={16} />
                   </div>
                 </div>
-                <h3 className="text-3xl font-bold text-primary">${totalPaid.toLocaleString()}</h3>
+                <h3 className="text-2xl font-bold text-primary">${totalPaid.toLocaleString()}</h3>
               </div>
             </div>
 
@@ -552,41 +581,49 @@ export default function FinanceView({
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="font-bold text-slate-900 flex items-center gap-2">
-                    <Bell size={18} className="text-primary" />
-                    Próximas Gestiones de Cobro
+                    <AlertTriangle size={18} className="text-rose-500" />
+                    Documentos Vencidos (Recupero)
                   </h3>
-                  <button className="text-xs font-bold text-primary uppercase tracking-widest">Ver Calendario</button>
+                  <span className="bg-rose-50 text-rose-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border border-rose-100">
+                    {overdueInvoices.length} Documentos Críticos
+                  </span>
                 </div>
                 
                 <div className="space-y-4">
-                  {tasks.length === 0 && (
+                  {overdueInvoices.length === 0 && (
                     <div className="py-12 text-center text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
-                      <Clock size={48} className="mx-auto mb-3 opacity-20" />
-                      <p className="text-sm font-medium">No hay tareas de seguimiento pendientes.</p>
+                      <CheckCircle2 size={48} className="mx-auto mb-3 opacity-20" />
+                      <p className="text-sm font-medium">No hay documentos vencidos pendientes.</p>
                     </div>
                   )}
-                  {tasks.map(task => (
-                    <div key={task.id} className="p-4 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between group hover:border-primary/30 transition-all">
+                  {overdueInvoices.map(inv => (
+                    <div key={inv.id} className="p-4 bg-rose-50/30 border border-rose-100 rounded-xl flex items-center justify-between group hover:bg-rose-50 transition-all">
                       <div className="flex items-center gap-4">
-                        <div className={`p-2 rounded-lg 
-                          ${task.priority === 'high' ? 'bg-rose-100 text-rose-600' : 
-                            task.priority === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-slate-200 text-slate-600'}
-                        `}>
-                          {task.type === 'collection' ? <DollarSign size={18} /> : <Clock size={18} />}
+                        <div className="p-2 rounded-lg bg-rose-100 text-rose-600">
+                          <FileText size={18} />
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-slate-900">{task.title}</p>
-                          <p className="text-xs text-slate-500 font-medium">{task.clientName} • Vence: {task.date}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-bold text-slate-900">{inv.client}</p>
+                            <span className="text-[10px] font-mono text-slate-400">#{inv.id.substring(0,6)}</span>
+                          </div>
+                          <p className="text-xs text-rose-600 font-bold uppercase tracking-widest">Venció: {inv.dueDate || inv.date}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border
-                          ${task.priority === 'high' ? 'bg-rose-50 text-rose-700 border-rose-100' : 
-                            task.priority === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-slate-100 text-slate-600 border-slate-200'}
-                        `}>
-                          {task.priority}
-                        </span>
-                        <button className="p-2 bg-white border border-slate-200 rounded-lg text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-emerald-50">
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <p className="text-xs font-mono font-bold text-slate-900">${inv.totalAmount?.toLocaleString()}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{inv.status}</p>
+                        </div>
+                        <button 
+                          onClick={async () => {
+                            if (!user) return;
+                            const docRef = doc(db, 'invoices', inv.id);
+                            await updateDoc(docRef, { status: 'Pagado', updatedAt: serverTimestamp() });
+                          }}
+                          className="p-2 bg-white border border-slate-200 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-all shadow-sm"
+                          title="Marcar como pagado"
+                        >
                           <CheckCircle2 size={16} />
                         </button>
                       </div>
@@ -633,9 +670,14 @@ export default function FinanceView({
                   Atención Requerida
                 </h4>
                 <p className="text-xs text-primary/80 font-medium leading-relaxed">
-                  Hay 3 facturas vencidas que superan los 45 días sin confirmación de pago. Se recomienda iniciar gestión de cobranza telefónica inmediata.
+                  Hay {overdueInvoices.length} facturas vencidas que requieren atención inmediata. Se recomienda iniciar gestión de cobranza y actualizar estados de pago.
                 </p>
-                <button className="mt-4 w-full bg-primary text-white py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest shadow-sm hover:opacity-90">Gestionar Vencidos</button>
+                <button 
+                  onClick={() => setActiveTab('billing')}
+                  className="mt-4 w-full bg-primary text-white py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest shadow-sm hover:opacity-90"
+                >
+                  Gestionar Vencidos
+                </button>
               </div>
 
               <div className="bg-white border border-slate-200 rounded-xl p-6">
@@ -679,6 +721,26 @@ export default function FinanceView({
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
                 value={newInvoice.client}
                 onChange={e => setNewInvoice({...newInvoice, client: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Fecha de Emisión</label>
+              <input 
+                required
+                type="date" 
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                value={newInvoice.date}
+                onChange={e => setNewInvoice({...newInvoice, date: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Fecha de Vencimiento</label>
+              <input 
+                required
+                type="date" 
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                value={newInvoice.dueDate}
+                onChange={e => setNewInvoice({...newInvoice, dueDate: e.target.value})}
               />
             </div>
             <div>

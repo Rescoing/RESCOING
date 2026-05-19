@@ -70,6 +70,7 @@ export interface Invoice {
   rut?: string;
   status: 'Pagado' | 'Pendiente' | 'Vencido';
   date: string;
+  dueDate?: string;
   netAmount: number;
   iva: number;
   totalAmount: number;
