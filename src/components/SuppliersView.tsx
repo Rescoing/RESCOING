@@ -23,6 +23,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { Supplier, PurchaseInvoice, PaymentNotice } from '../types';
 import Modal from './ui/Modal';
 import { collection, query, where, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -162,7 +163,7 @@ export default function SuppliersView() {
       setIsNoticeModalOpen(false);
       setNewNotice({ plannedPaymentDate: new Date().toISOString().split('T')[0], notes: '', status: 'sent' });
     } catch (error) {
-      console.error(error);
+      handleFirestoreError(error, OperationType.WRITE, 'paymentNotices/purchaseInvoices');
     }
   };
 

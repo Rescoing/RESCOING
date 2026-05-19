@@ -189,6 +189,70 @@
         "lastFolio": { "type": "number" }
       },
       "required": ["ownerId", "docType", "lastFolio"]
+    },
+    "PurchaseInvoice": {
+      "title": "Purchase Invoice",
+      "description": "Invoice from a supplier",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "folio": { "type": "string" },
+        "date": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid", "overdue"] },
+        "paymentDate": { "type": "string" },
+        "paymentNoticeId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "supplierId", "folio", "totalAmount", "status"]
+    },
+    "PaymentNotice": {
+      "title": "Payment Notice",
+      "description": "Notice of scheduled payment to a supplier",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "invoiceId": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "scheduledDate": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "invoiceId", "supplierId", "scheduledDate", "status"]
+    },
+    "Attendance": {
+      "title": "Attendance Record",
+      "description": "Employee attendance check-in/out",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "date": { "type": "string" },
+        "checkIn": { "type": "string" },
+        "checkOut": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "employeeId", "date"]
+    },
+    "Payroll": {
+      "title": "Payroll",
+      "description": "Employee payroll record",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "month": { "type": "string" },
+        "year": { "type": "number" },
+        "baseSalary": { "type": "number" },
+        "netPay": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "employeeId", "month", "year", "netPay"]
     }
   },
   "firestore": {
@@ -222,7 +286,7 @@
     },
     "/invoices/{invoiceId}": {
       "schema": "Invoice",
-      "description": "Billing and Invoices"
+      "description": "Billing and Invoices (Sales)"
     },
     "/financeProcesses/{processId}": {
       "schema": "FinanceProcess",
@@ -243,6 +307,22 @@
     "/folioCounters/{counterId}": {
       "schema": "FolioCounter",
       "description": "Counters for sequential folios"
+    },
+    "/purchaseInvoices/{invoiceId}": {
+      "schema": "PurchaseInvoice",
+      "description": "Purchase Invoices (Expenses)"
+    },
+    "/paymentNotices/{noticeId}": {
+      "schema": "PaymentNotice",
+      "description": "Scheduled Payment Notices"
+    },
+    "/attendance/{recordId}": {
+      "schema": "Attendance",
+      "description": "Employee Attendance"
+    },
+    "/payrolls/{payrollId}": {
+      "schema": "Payroll",
+      "description": "Employee Payrolls"
     }
   }
 }
