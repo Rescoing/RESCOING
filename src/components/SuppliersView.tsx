@@ -197,6 +197,29 @@ export default function SuppliersView() {
     }
   };
 
+  const confirmPaymentWithNotice = async (invoiceId: string, noticeId: string) => {
+    try {
+      const invoiceRef = doc(db, 'purchaseInvoices', invoiceId);
+      const noticeRef = doc(db, 'paymentNotices', noticeId);
+      const paymentDate = new Date().toISOString().split('T')[0];
+
+      await updateDoc(invoiceRef, {
+        status: 'paid',
+        paymentDate: paymentDate,
+        updatedAt: serverTimestamp()
+      });
+
+      await updateDoc(noticeRef, {
+        status: 'confirmed',
+        updatedAt: serverTimestamp()
+      });
+
+    } catch (error) {
+      console.error(error);
+      alert('Error al confirmar el pago');
+    }
+  };
+
   const deleteInvoice = async (invoiceId: string) => {
     if (!confirm('¿Está seguro de eliminar esta factura?')) return;
     try {
@@ -231,19 +254,26 @@ export default function SuppliersView() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-slate-100 pb-6 uppercase tracking-widest font-black text-[10px]">
-        <div className="flex gap-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-slate-100 pb-2">
+        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
           <button 
             onClick={() => { setActiveTab('directory'); setSelectedSupplier(null); }}
-            className={`pb-4 border-b-2 transition-all ${activeTab === 'directory' ? 'border-primary text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            className={`px-6 py-2.5 rounded-lg transition-all text-sm font-bold flex items-center gap-2 ${activeTab === 'directory' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
+            <Truck size={16} />
             Directorio de Proveedores
           </button>
           <button 
             onClick={() => setActiveTab('allInvoices')}
-            className={`pb-4 border-b-2 transition-all ${activeTab === 'allInvoices' ? 'border-primary text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            className={`px-6 py-2.5 rounded-lg transition-all text-sm font-bold flex items-center gap-2 ${activeTab === 'allInvoices' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
+            <FileText size={16} />
             Gestión Global de Facturas
+            {(overdueInvoices.length > 0) && (
+              <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
+                {overdueInvoices.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -550,15 +580,17 @@ export default function SuppliersView() {
                                       <Bell size={16} />
                                     </button>
                                   )}
-                                  {inv.status !== 'paid' && (
+
+                                   {inv.status !== 'paid' && (
                                     <button 
-                                      onClick={() => markAsPaid(inv.id)}
-                                      className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-transparent hover:border-emerald-100 shadow-sm"
-                                      title="Confirmar Pago Ejecutado"
+                                      onClick={() => inv.paymentNoticeId ? confirmPaymentWithNotice(inv.id, inv.paymentNoticeId) : markAsPaid(inv.id)}
+                                      className={`p-2 rounded-lg transition-all border border-transparent shadow-sm ${inv.paymentNoticeId ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-100 font-bold' : 'text-emerald-600 hover:bg-emerald-50 hover:border-emerald-100'}`}
+                                      title={inv.paymentNoticeId ? "Confirmar Pago de Aviso Programado" : "Confirmar Pago Ejecutado"}
                                     >
                                       <CheckCircle2 size={16} />
                                     </button>
                                   )}
+
                                   <button 
                                     onClick={() => deleteInvoice(inv.id)}
                                     className="p-2 text-rose-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
@@ -599,42 +631,88 @@ export default function SuppliersView() {
             </div>
           </div>
 
-          {/* Alertas de Vencimiento */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-rose-50 border border-rose-100 p-4 rounded-xl">
-              <div className="flex items-center gap-3 mb-2">
-                <AlertTriangle className="text-rose-600" size={20} />
-                <span className="text-xs font-black text-rose-700 uppercase tracking-widest">Facturas Vencidas</span>
+          {/* Alertas de Vencimiento Destacadas */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="bg-white border-2 border-rose-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-2">
+                <div className="p-2 bg-rose-100 text-rose-600 rounded-lg">
+                  <AlertTriangle size={20} />
+                </div>
               </div>
-              <p className="text-2xl font-black text-rose-900 font-mono">
-                ${overdueInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0).toLocaleString()}
-              </p>
-              <p className="text-[10px] text-rose-600 font-bold uppercase mt-1">{overdueInvoices.length} Documentos atrasados</p>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Pagos Vencidos</span>
+                <p className="text-3xl font-black text-slate-900 font-mono">
+                  ${overdueInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0).toLocaleString()}
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs font-bold text-rose-600 px-2 py-0.5 bg-rose-50 rounded-full">
+                    {overdueInvoices.length} Facturas críticas
+                  </span>
+                </div>
+              </div>
             </div>
 
-            <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl">
-              <div className="flex items-center gap-3 mb-2">
-                <Clock className="text-amber-600" size={20} />
-                <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Vence pronto (7 días)</span>
+            <div className="bg-white border-2 border-amber-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-2">
+                <div className="p-2 bg-amber-100 text-amber-600 rounded-lg">
+                  <Clock size={20} />
+                </div>
               </div>
-              <p className="text-2xl font-black text-amber-900 font-mono">
-                ${upcomingPayments.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0).toLocaleString()}
-              </p>
-              <p className="text-[10px] text-amber-600 font-bold uppercase mt-1">{upcomingPayments.length} Por vencer</p>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Próximos 7 días</span>
+                <p className="text-3xl font-black text-slate-900 font-mono">
+                  ${upcomingPayments.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0).toLocaleString()}
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs font-bold text-amber-600 px-2 py-0.5 bg-amber-50 rounded-full">
+                    {upcomingPayments.length} Compromisos
+                  </span>
+                </div>
+              </div>
             </div>
 
-            <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl">
-              <div className="flex items-center gap-3 mb-2">
-                <CheckCircle2 className="text-emerald-600" size={20} />
-                <span className="text-xs font-black text-emerald-700 uppercase tracking-widest">Pagado este mes</span>
+            <div className="bg-white border-2 border-indigo-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-2">
+                <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+                  <Bell size={20} />
+                </div>
               </div>
-              <p className="text-2xl font-black text-emerald-900 font-mono">
-                ${invoices
-                  .filter(inv => inv.status === 'paid' && inv.paymentDate?.startsWith(new Date().toISOString().slice(0, 7)))
-                  .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0)
-                  .toLocaleString()}
-              </p>
-              <p className="text-[10px] text-emerald-600 font-bold uppercase mt-1">Gestión mensual exitosa</p>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1">Avisos Pendientes</span>
+                <p className="text-3xl font-black text-slate-900 font-mono">
+                  ${invoices
+                    .filter(inv => inv.paymentNoticeId && inv.status !== 'paid')
+                    .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0)
+                    .toLocaleString()}
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs font-bold text-indigo-600 px-2 py-0.5 bg-indigo-50 rounded-full">
+                    {invoices.filter(inv => inv.paymentNoticeId && inv.status !== 'paid').length} Avisos por pagar
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border-2 border-emerald-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-2">
+                <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg">
+                  <CheckCircle2 size={20} />
+                </div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Pagado este mes</span>
+                <p className="text-3xl font-black text-slate-900 font-mono">
+                  ${invoices
+                    .filter(inv => inv.status === 'paid' && inv.paymentDate?.startsWith(new Date().toISOString().slice(0, 7)))
+                    .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0)
+                    .toLocaleString()}
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs font-bold text-emerald-600 px-2 py-0.5 bg-emerald-50 rounded-full">
+                    Historial Mensual
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -721,16 +799,28 @@ export default function SuppliersView() {
                                     <Eye size={16} />
                                   </button>
                                   
-                                  <div className="relative group/status px-2 py-1 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-1">
-                                    <select 
-                                      className="text-[10px] font-bold bg-transparent border-none appearance-none cursor-pointer focus:outline-none pr-4"
-                                      value={inv.status}
-                                      onChange={(e) => updateInvoiceStatus(inv.id, e.target.value as any)}
-                                    >
-                                      <option value="pending">PENDIENTE</option>
-                                      <option value="paid">PAGADO</option>
-                                    </select>
-                                    <Clock size={10} className="absolute right-2 text-slate-400 pointer-events-none" />
+                                  <div className="flex items-center gap-1">
+                                    <div className="relative group/status px-2 py-1 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-1">
+                                      <select 
+                                        className="text-[10px] font-bold bg-transparent border-none appearance-none cursor-pointer focus:outline-none pr-4"
+                                        value={inv.status}
+                                        onChange={(e) => updateInvoiceStatus(inv.id, e.target.value as any)}
+                                      >
+                                        <option value="pending">PENDIENTE</option>
+                                        <option value="paid">PAGADO</option>
+                                      </select>
+                                      <Clock size={10} className="absolute right-2 text-slate-400 pointer-events-none" />
+                                    </div>
+
+                                    {inv.paymentNoticeId && inv.status !== 'paid' && (
+                                      <button 
+                                        onClick={() => confirmPaymentWithNotice(inv.id, inv.paymentNoticeId!)}
+                                        className="p-2 text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100 transition-colors shadow-sm"
+                                        title="Confirmar Pago de Aviso"
+                                      >
+                                        <CheckCircle2 size={16} />
+                                      </button>
+                                    )}
                                   </div>
 
                                   <button 
