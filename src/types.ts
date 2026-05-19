@@ -207,6 +207,21 @@ export interface AttendanceRecord {
   compliance?: string;
 }
 
+export interface PurchaseInvoice {
+  id: string;
+  supplierId: string;
+  folio: string;
+  date: string;
+  dueDate: string;
+  paymentDate?: string;
+  netAmount: number;
+  iva: number;
+  totalAmount: number;
+  status: 'pending' | 'paid' | 'overdue';
+  description?: string;
+  ownerId: string;
+}
+
 export interface RiskPreventionRecord {
   id: string;
   type: 'epp' | 'talk' | 'checklist' | 'accident';
