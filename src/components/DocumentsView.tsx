@@ -15,12 +15,14 @@ import {
   User,
   Calculator,
   Link as LinkIcon,
-  Trash2
+  Trash2,
+  Edit2,
+  Save
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Document, Contact } from '../types';
 import Modal from './ui/Modal';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
 
@@ -40,6 +42,7 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [rutLookup, setRutLookup] = useState('');
+  const [editingDoc, setEditingDoc] = useState<Document | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -174,27 +177,47 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
     if (!user) return;
 
     try {
-      await addDoc(collection(db, 'documents'), {
-        type: activeTab,
-        folio: generateFolio(activeTab),
-        clientId: newDoc.clientId || '',
-        clientName: newDoc.clientName || '',
-        projectId: newDoc.projectId || '',
-        projectType: newDoc.projectType || '',
-        items: newDoc.items || [],
-        date: new Date().toLocaleDateString('es-ES'),
-        netAmount: newDoc.netAmount || 0,
-        iva: newDoc.iva || 0,
-        totalAmount: newDoc.totalAmount || 0,
-        status: activeTab === 'payment_status' ? 'paid' : 'draft',
-        paymentMethod: newDoc.paymentMethod || 'transfer',
-        siiFolio: newDoc.siiFolio || '',
-        notes: newDoc.notes || '',
-        linkedDocId: newDoc.linkedDocId || '',
-        ownerId: user.uid,
-        createdAt: serverTimestamp()
-      });
+      if (editingDoc) {
+        await updateDoc(doc(db, 'documents', editingDoc.id), {
+          clientId: newDoc.clientId || '',
+          clientName: newDoc.clientName || '',
+          projectId: newDoc.projectId || '',
+          projectType: newDoc.projectType || '',
+          items: newDoc.items || [],
+          netAmount: newDoc.netAmount || 0,
+          iva: newDoc.iva || 0,
+          totalAmount: newDoc.totalAmount || 0,
+          status: newDoc.status || 'draft',
+          paymentMethod: newDoc.paymentMethod || 'transfer',
+          siiFolio: newDoc.siiFolio || '',
+          notes: newDoc.notes || '',
+          linkedDocId: newDoc.linkedDocId || '',
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        await addDoc(collection(db, 'documents'), {
+          type: activeTab,
+          folio: generateFolio(activeTab),
+          clientId: newDoc.clientId || '',
+          clientName: newDoc.clientName || '',
+          projectId: newDoc.projectId || '',
+          projectType: newDoc.projectType || '',
+          items: newDoc.items || [],
+          date: new Date().toLocaleDateString('es-ES'),
+          netAmount: newDoc.netAmount || 0,
+          iva: newDoc.iva || 0,
+          totalAmount: newDoc.totalAmount || 0,
+          status: activeTab === 'payment_status' ? 'paid' : 'draft',
+          paymentMethod: newDoc.paymentMethod || 'transfer',
+          siiFolio: newDoc.siiFolio || '',
+          notes: newDoc.notes || '',
+          linkedDocId: newDoc.linkedDocId || '',
+          ownerId: user.uid,
+          createdAt: serverTimestamp()
+        });
+      }
       setIsModalOpen(false);
+      setEditingDoc(null);
       resetForm();
     } catch (error) {
       console.error(error);
@@ -202,8 +225,28 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
   };
 
   const resetForm = () => {
-    setNewDoc({ clientId: '', clientName: '', netAmount: 0, iva: 0, totalAmount: 0, status: 'draft' });
+    setNewDoc({ 
+      clientId: '', 
+      clientName: '', 
+      projectId: '',
+      projectType: '',
+      items: [],
+      netAmount: 0, 
+      iva: 0, 
+      totalAmount: 0, 
+      status: 'draft',
+      notes: '',
+      siiFolio: '',
+      paymentMethod: 'transfer',
+      linkedDocId: ''
+    });
     setRutLookup('');
+  };
+
+  const startEditing = (doc: Document) => {
+    setEditingDoc(doc);
+    setNewDoc({ ...doc });
+    setIsModalOpen(true);
   };
 
   const filteredDocs = documents.filter(d => 
@@ -302,7 +345,14 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
-                       <button className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-400 hover:text-slate-600">
+                       <button 
+                        onClick={() => startEditing(doc)}
+                        className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-400 hover:text-primary"
+                        title="Editar Documento"
+                       >
+                        <Edit2 size={16} />
+                      </button>
+                       <button className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-400 hover:text-slate-600" title="Descargar PDF">
                         <Download size={16} />
                       </button>
                     </div>
@@ -322,19 +372,34 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
 
       <Modal 
         isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        title={`Generar ${DOCUMENT_TYPES.find(t => t.id === activeTab)?.label}`}
+        onClose={() => { setIsModalOpen(false); setEditingDoc(null); }} 
+        title={editingDoc ? `Editar ${DOCUMENT_TYPES.find(t => t.id === activeTab)?.label}` : `Generar ${DOCUMENT_TYPES.find(t => t.id === activeTab)?.label}`}
       >
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
             <div className="flex justify-between items-center">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Folio Automático</span>
-              <span className="text-sm font-mono font-bold text-primary">{generateFolio(activeTab)}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{editingDoc ? 'Folio Actual' : 'Folio Automático'}</span>
+              <span className="text-sm font-mono font-bold text-primary">{editingDoc ? editingDoc.folio : generateFolio(activeTab)}</span>
             </div>
           </div>
 
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Estado del Documento</label>
+                <select 
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm bg-white"
+                  value={newDoc.status}
+                  onChange={e => setNewDoc({...newDoc, status: e.target.value as any})}
+                >
+                  <option value="draft">Borrador</option>
+                  <option value="sent">Enviado</option>
+                  <option value="approved">Aprobado / Emitido</option>
+                  <option value="paid">Pagado</option>
+                  <option value="pending">Pendiente de Pago</option>
+                  <option value="rejected">Rechazado</option>
+                </select>
+              </div>
               <div className="col-span-2">
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Tipo de Proyecto</label>
                 <input 
@@ -583,8 +648,8 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
             type="submit"
             className="w-full bg-primary text-white py-3 rounded-lg font-bold text-sm shadow-md hover:bg-primary/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
-            <Plus size={18} />
-            Confirmar Registro de Documento
+            {editingDoc ? <Save size={18} /> : <Plus size={18} />}
+            {editingDoc ? 'Actualizar Documento' : 'Confirmar Registro de Documento'}
           </button>
         </form>
       </Modal>
