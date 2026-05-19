@@ -465,46 +465,52 @@ export default function HRView() {
     if (!user) return;
     
     setLoading(true);
-    try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject);
-      });
+    let coords = { lat: 0, lng: 0 };
+    let verificationType = 'Geolocalización GPS';
 
-      const entry = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        timestamp: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
-        date: new Date().toLocaleDateString('es-ES'),
-        verification: 'Geolocalización + OTP'
-      };
+    try {
+      try {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+        });
+        coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+      } catch (geoError) {
+        console.warn("Geolocation failed or denied, falling back to Web/IP record", geoError);
+        verificationType = 'Acceso Web/Escritorio';
+      }
+
+      const timestamp = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      const date = new Date().toLocaleDateString('es-ES');
 
       if (!currentRecord) {
         // Clock In
         await addDoc(collection(db, 'attendance'), {
           employeeId,
-          date: entry.date,
-          checkIn: entry.timestamp,
-          locationIn: { lat: entry.lat, lng: entry.lng },
+          date,
+          checkIn: timestamp,
+          locationIn: coords,
           ownerId: user.uid,
-          status: 'verified',
-          compliance: 'DT-Chile OK',
+          status: coords.lat !== 0 ? 'verified' : 'web_access',
+          verification: verificationType,
+          compliance: 'DT-Chile Standard',
           createdAt: serverTimestamp()
         });
-        alert('Ingreso registrado con geolocalización exitosa.');
+        alert(coords.lat !== 0 ? 'Ingreso registrado con GPS.' : 'Ingreso registrado vía Web (Sin GPS).');
       } else {
         // Clock Out
         const docRef = doc(db, 'attendance', currentRecord.id);
         await updateDoc(docRef, {
-          checkOut: entry.timestamp,
-          locationOut: { lat: entry.lat, lng: entry.lng },
+          checkOut: timestamp,
+          locationOut: coords,
           status: 'completed',
+          verificationOut: verificationType,
           updatedAt: serverTimestamp()
         });
         alert('Salida registrada correctamente.');
       }
     } catch (error) {
       console.error(error);
-      alert('Error al registrar asistencia. Asegúrese de activar el GPS.');
+      alert('Error crítico al procesar la asistencia.');
     } finally {
       setLoading(false);
     }
@@ -861,9 +867,9 @@ export default function HRView() {
                         <span className="font-bold text-slate-700">{todayRecord?.checkOut || '--:--'}</span>
                       </div>
                       {todayRecord && (
-                        <div className="flex items-center gap-1 text-[9px] text-emerald-600 font-bold uppercase tracking-widest bg-emerald-50 p-1 rounded mt-1">
+                        <div className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest p-1 rounded mt-1 ${todayRecord.locationIn?.lat !== 0 ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50'}`}>
                           <MapPin size={10} />
-                          Ubicación Capturada
+                          {todayRecord.locationIn?.lat !== 0 ? 'Ubicación Capturada' : 'Registro Web (Escritorio)'}
                         </div>
                       )}
                     </div>
@@ -919,8 +925,8 @@ export default function HRView() {
                         <p className="text-[9px] font-bold text-slate-400 uppercase">Output</p>
                         <p className="text-xs font-mono font-bold text-rose-600">{record.checkOut || '--:--'}</p>
                       </div>
-                      <div className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-bold uppercase tracking-widest border border-blue-100">
-                        Audit: OK
+                      <div className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-widest border ${record.locationIn?.lat !== 0 ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                        Audit: {record.locationIn?.lat !== 0 ? 'Digital GPS' : 'Web/Manual'}
                       </div>
                     </div>
                   </div>
