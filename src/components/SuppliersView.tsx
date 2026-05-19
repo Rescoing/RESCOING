@@ -39,6 +39,7 @@ export default function SuppliersView() {
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [isNoticeModalOpen, setIsNoticeModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'directory' | 'allInvoices'>('directory');
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -190,8 +191,14 @@ export default function SuppliersView() {
   const filteredSuppliers = suppliers.filter(s => 
     s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     s.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.rutEmpresa.includes(searchTerm)
+    s.rutEmpresa.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const filteredInvoices = invoices.filter(inv => {
+    const supplier = suppliers.find(s => s.id === inv.supplierId);
+    return supplier?.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+           inv.folio.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   const upcomingPayments = invoices.filter(inv => {
     if (inv.status === 'paid') return false;
@@ -206,57 +213,75 @@ export default function SuppliersView() {
 
   return (
     <div className="space-y-8">
-      <AnimatePresence mode="wait">
-        {!selectedSupplier ? (
-          <motion.div 
-            key="directory"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            className="space-y-6"
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-slate-100 pb-6 uppercase tracking-widest font-black text-[10px]">
+        <div className="flex gap-8">
+          <button 
+            onClick={() => { setActiveTab('directory'); setSelectedSupplier(null); }}
+            className={`pb-4 border-b-2 transition-all ${activeTab === 'directory' ? 'border-primary text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-3xl font-bold tracking-tight text-slate-900">Directorio de Proveedores</h2>
-                <p className="text-slate-500 mt-1">Gestión de alianzas estratégicas y suministros industriales.</p>
-              </div>
-              <button 
-                onClick={() => setIsModalOpen(true)}
-                className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:opacity-90 active:scale-95 transition-all"
-              >
-                <Plus size={18} />
-                Nuevo Proveedor
-              </button>
-            </div>
+            Directorio de Proveedores
+          </button>
+          <button 
+            onClick={() => setActiveTab('allInvoices')}
+            className={`pb-4 border-b-2 transition-all ${activeTab === 'allInvoices' ? 'border-primary text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            Gestión Global de Facturas
+          </button>
+        </div>
+      </div>
 
-            {(upcomingPayments.length > 0 || overdueInvoices.length > 0) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {overdueInvoices.length > 0 && (
-                  <div className="bg-rose-50 border border-rose-200 p-4 rounded-xl flex items-center gap-4">
-                    <div className="p-3 bg-rose-100 text-rose-600 rounded-lg">
-                      <AlertTriangle size={24} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-rose-900">Facturas Vencidas</p>
-                      <p className="text-xs text-rose-600 font-medium">Hay {overdueInvoices.length} documentos con pago atrasado.</p>
-                    </div>
-                  </div>
-                )}
-                {upcomingPayments.length > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center gap-4">
-                    <div className="p-3 bg-amber-100 text-amber-600 rounded-lg">
-                      <Clock size={24} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-amber-900">Próximos Pagos</p>
-                      <p className="text-xs text-amber-600 font-medium">{upcomingPayments.length} facturas vencen en los próximos 7 días.</p>
-                    </div>
-                  </div>
-                )}
+      <AnimatePresence mode="wait">
+        {activeTab === 'directory' ? (
+          !selectedSupplier ? (
+            <motion.div 
+              key="directory"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="space-y-6"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-3xl font-bold tracking-tight text-slate-900">Proveedores</h2>
+                  <p className="text-slate-500 mt-1">Alianzas estratégicas y suministros industriales.</p>
+                </div>
+                <button 
+                  onClick={() => setIsModalOpen(true)}
+                  className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:opacity-90 active:scale-95 transition-all"
+                >
+                  <Plus size={18} />
+                  Nuevo Proveedor
+                </button>
               </div>
-            )}
 
-            <div className="flex flex-col md:flex-row gap-4">
+              {(upcomingPayments.length > 0 || overdueInvoices.length > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {overdueInvoices.length > 0 && (
+                    <div className="bg-rose-50 border border-rose-200 p-4 rounded-xl flex items-center gap-4 text-left">
+                      <div className="p-3 bg-rose-100 text-rose-600 rounded-lg">
+                        <AlertTriangle size={24} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-rose-900">Facturas Vencidas</p>
+                        <p className="text-xs text-rose-600 font-medium">Hay {overdueInvoices.length} documentos con pago atrasado.</p>
+                      </div>
+                    </div>
+                  )}
+                  {upcomingPayments.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center gap-4 text-left">
+                      <div className="p-3 bg-amber-100 text-amber-600 rounded-lg">
+                        <Clock size={24} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-amber-900">Próximos Pagos</p>
+                        <p className="text-xs text-amber-600 font-medium">{upcomingPayments.length} facturas vencen en los próximos 7 días.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex flex-col md:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input 
@@ -532,6 +557,137 @@ export default function SuppliersView() {
                       <tr>
                         <td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic text-sm">
                           No hay facturas registradas para este proveedor.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </motion.div>
+        )
+      ) : (
+        <motion.div
+          key="allInvoices"
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.98 }}
+          className="space-y-6 text-left"
+        >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-3xl font-bold tracking-tight text-slate-900">Administración de Compras</h2>
+                <p className="text-slate-500 mt-1">Control centralizado de facturas recibidas y compromisos de pago.</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                  type="text" 
+                  placeholder="Buscar por folio o proveedor..." 
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-sans"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100">
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Proveedor</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Folio</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Monto Total</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Estado / Pago</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {filteredInvoices.length > 0 ? (
+                      filteredInvoices
+                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                        .map(inv => {
+                          const supplier = suppliers.find(s => s.id === inv.supplierId);
+                          const isOverdue = inv.status !== 'paid' && new Date(inv.dueDate) < new Date();
+                          return (
+                            <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors group">
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-slate-900 text-sm">{supplier?.name || 'Desconocido'}</span>
+                                  <span className="text-[10px] font-mono text-slate-400">{supplier?.rutEmpresa}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="font-mono font-bold text-slate-900 text-sm">#{inv.folio}</span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col">
+                                  <span className={`text-sm font-bold ${isOverdue ? 'text-rose-600' : 'text-slate-600'}`}>
+                                    {inv.dueDate}
+                                  </span>
+                                  {inv.paymentDate && (
+                                    <span className="text-[9px] font-black text-emerald-600 uppercase tracking-tighter bg-emerald-50 px-1 rounded w-fit">Pagado: {inv.paymentDate}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="font-mono font-bold text-slate-900 text-sm">${inv.totalAmount?.toLocaleString()}</span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col gap-1">
+                                  <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded inline-flex items-center gap-1.5 w-fit
+                                    ${inv.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 
+                                      isOverdue ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}
+                                  `}>
+                                    {inv.status === 'paid' ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+                                    {inv.status === 'paid' ? 'Pagado' : isOverdue ? 'Vencido' : 'Pendiente'}
+                                  </span>
+                                  {inv.paymentNoticeId && (
+                                    <span className="text-[9px] font-bold text-indigo-600 uppercase bg-indigo-50 px-2 py-0.5 rounded text-center border border-indigo-100">
+                                      Aviso Enviado
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex justify-end gap-2">
+                                  <button 
+                                    onClick={() => { setSelectedInvoice(inv); setIsDetailModalOpen(true); }}
+                                    className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                                    title="Detalle"
+                                  >
+                                    <Eye size={16} />
+                                  </button>
+                                  {inv.status !== 'paid' && (
+                                    <button 
+                                      onClick={() => markAsPaid(inv.id)}
+                                      className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-transparent hover:border-emerald-100 shadow-sm"
+                                      title="Confirmar Pago"
+                                    >
+                                      <CheckCircle2 size={16} />
+                                    </button>
+                                  )}
+                                  <button 
+                                    onClick={() => deleteInvoice(inv.id)}
+                                    className="p-2 text-slate-200 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                    title="Eliminar"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                    ) : (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic text-sm">
+                          No hay registros de compras disponibles.
                         </td>
                       </tr>
                     )}
