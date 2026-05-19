@@ -29,7 +29,8 @@ import {
   Folder,
   Upload,
   FileBox,
-  FileCheck
+  FileCheck,
+  ExternalLink
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Employee, AttendanceRecord } from '../types';
@@ -867,9 +868,22 @@ export default function HRView() {
                         <span className="font-bold text-slate-700">{todayRecord?.checkOut || '--:--'}</span>
                       </div>
                       {todayRecord && (
-                        <div className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest p-1 rounded mt-1 ${todayRecord.locationIn?.lat !== 0 ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50'}`}>
-                          <MapPin size={10} />
-                          {todayRecord.locationIn?.lat !== 0 ? 'Ubicación Capturada' : 'Registro Web (Escritorio)'}
+                        <div className="flex flex-col gap-1 mt-1">
+                          <div className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest p-1 rounded ${todayRecord.locationIn?.lat !== 0 ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50'}`}>
+                            <MapPin size={10} />
+                            {todayRecord.locationIn?.lat !== 0 ? 'Ubicación Capturada' : 'Registro Web (Escritorio)'}
+                          </div>
+                          {todayRecord.locationIn?.lat !== 0 && (
+                            <a 
+                              href={`https://www.google.com/maps?q=${todayRecord.locationIn?.lat},${todayRecord.locationIn?.lng}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[9px] text-primary hover:underline font-bold uppercase tracking-widest flex items-center gap-1 px-1"
+                            >
+                              <ExternalLink size={10} />
+                              Ver en Google Maps
+                            </a>
+                          )}
                         </div>
                       )}
                     </div>
@@ -925,8 +939,21 @@ export default function HRView() {
                         <p className="text-[9px] font-bold text-slate-400 uppercase">Output</p>
                         <p className="text-xs font-mono font-bold text-rose-600">{record.checkOut || '--:--'}</p>
                       </div>
-                      <div className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-widest border ${record.locationIn?.lat !== 0 ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
-                        Audit: {record.locationIn?.lat !== 0 ? 'Digital GPS' : 'Web/Manual'}
+                      <div className="flex flex-col items-end gap-1">
+                        <div className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-widest border ${record.locationIn?.lat !== 0 ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                          Audit: {record.locationIn?.lat !== 0 ? 'Digital GPS' : 'Web/Manual'}
+                        </div>
+                        {record.locationIn?.lat !== 0 && (
+                          <a 
+                            href={`https://www.google.com/maps?q=${record.locationIn?.lat},${record.locationIn?.lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[9px] text-primary hover:underline font-bold uppercase tracking-widest flex items-center gap-1 px-1"
+                          >
+                            <ExternalLink size={10} />
+                            Mapa (Audit)
+                          </a>
+                        )}
                       </div>
                     </div>
                   </div>
