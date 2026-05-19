@@ -146,6 +146,13 @@ export interface Supplier {
   rating: number;
 }
 
+export interface WorkingSchedule {
+  active: boolean;
+  startTime: string; // e.g. "08:00"
+  endTime: string;   // e.g. "18:00"
+  breakTime?: number; // minutes
+}
+
 export interface Employee {
   id: string;
   rut: string;
@@ -165,6 +172,7 @@ export interface Employee {
   nationality?: string;
   vacationDays: number;
   salary: number;
+  schedule?: WorkingSchedule;
   documents?: {
     id: string;
     name: string;

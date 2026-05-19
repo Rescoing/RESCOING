@@ -130,7 +130,13 @@ export default function HRView() {
     nationality: 'Chilena',
     status: 'active',
     salary: 0,
-    vacationDays: 15
+    vacationDays: 15,
+    schedule: {
+      active: true,
+      startTime: '08:00',
+      endTime: '18:00',
+      breakTime: 60
+    }
   });
 
   const [activeTab, setActiveTab] = useState<'info' | 'docs'>('info');
@@ -203,6 +209,12 @@ export default function HRView() {
       status: 'active',
       salary: 0,
       vacationDays: 15,
+      schedule: {
+        active: true,
+        startTime: '08:00',
+        endTime: '18:00',
+        breakTime: 60
+      },
       documents: []
     });
   };
@@ -485,6 +497,20 @@ export default function HRView() {
 
       if (!currentRecord) {
         // Clock In
+        const emp = employees.find(e => e.id === employeeId);
+        let compliance = 'Puntual (DT Standard)';
+        
+        if (emp?.schedule?.active) {
+          const [h, m] = timestamp.split(':').map(Number);
+          const [sh, sm] = emp.schedule.startTime.split(':').map(Number);
+          const totalMin = h * 60 + m;
+          const targetMin = sh * 60 + sm;
+          
+          if (totalMin > targetMin + 1) {
+            compliance = `Atraso: ${totalMin - targetMin} min`;
+          }
+        }
+
         await addDoc(collection(db, 'attendance'), {
           employeeId,
           date,
@@ -493,17 +519,32 @@ export default function HRView() {
           ownerId: user.uid,
           status: coords.lat !== 0 ? 'verified' : 'web_access',
           verification: verificationType,
-          compliance: 'DT-Chile Standard',
+          compliance,
           createdAt: serverTimestamp()
         });
         alert(coords.lat !== 0 ? 'Ingreso registrado con GPS.' : 'Ingreso registrado vía Web (Sin GPS).');
       } else {
         // Clock Out
+        const emp = employees.find(e => e.id === employeeId);
+        let compliance = currentRecord.compliance;
+        
+        if (emp?.schedule?.active) {
+          const [h, m] = timestamp.split(':').map(Number);
+          const [sh, sm] = emp.schedule.endTime.split(':').map(Number);
+          const totalMin = h * 60 + m;
+          const targetMin = sh * 60 + sm;
+          
+          if (totalMin < targetMin) {
+            compliance += ` | Salida Anticipada: ${targetMin - totalMin} min`;
+          }
+        }
+
         const docRef = doc(db, 'attendance', currentRecord.id);
         await updateDoc(docRef, {
           checkOut: timestamp,
           locationOut: coords,
           status: 'completed',
+          compliance,
           verificationOut: verificationType,
           updatedAt: serverTimestamp()
         });
@@ -514,6 +555,39 @@ export default function HRView() {
       alert('Error crítico al procesar la asistencia.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const exportAttendance = () => {
+    try {
+      const headers = ['Fecha', 'Trabajador', 'RUT', 'Entrada', 'Salida', 'Estado', 'Cumplimiento'];
+      const rows = attendanceRecords.map(r => {
+        const emp = employees.find(e => e.id === r.employeeId);
+        return [
+          r.date,
+          `${emp?.firstName} ${emp?.lastName}`,
+          emp?.rut || '',
+          r.checkIn,
+          r.checkOut || '--:--',
+          r.status || 'OK',
+          r.compliance || 'DT Standard'
+        ];
+      });
+
+      const csvContent = "data:text/csv;charset=utf-8," 
+        + headers.join(',') + "\n"
+        + rows.map(e => e.join(",")).join("\n");
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `asistencia_rescoing_${new Date().toLocaleDateString()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error(error);
+      alert('Error al exportar registros.');
     }
   };
 
@@ -835,9 +909,18 @@ export default function HRView() {
                 <h3 className="font-bold text-lg text-slate-900">Control de Asistencia Multi-Canal</h3>
                 <p className="text-sm text-slate-500">Certificación DT-Chile compatible (Geolocalización + Cifrado Imputable)</p>
               </div>
-              <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
-                <ShieldCheck size={14} className="text-emerald-600" />
-                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">Normativa DT Chile Activa</span>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={exportAttendance}
+                  className="flex items-center gap-2 bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-200 transition-all border border-slate-200"
+                >
+                  <Download size={14} />
+                  Exportar Registros
+                </button>
+                <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
+                  <ShieldCheck size={14} className="text-emerald-600" />
+                  <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">Normativa DT Chile Activa</span>
+                </div>
               </div>
             </div>
 
@@ -938,6 +1021,12 @@ export default function HRView() {
                       <div className="text-center">
                         <p className="text-[9px] font-bold text-slate-400 uppercase">Output</p>
                         <p className="text-xs font-mono font-bold text-rose-600">{record.checkOut || '--:--'}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase">Cumplimiento</p>
+                        <p className={`text-[10px] font-bold ${record.compliance?.includes('Atraso') || record.compliance?.includes('Anticipada') ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          {record.compliance || 'DT Standard'}
+                        </p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <div className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-widest border ${record.locationIn?.lat !== 0 ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
@@ -1173,6 +1262,47 @@ export default function HRView() {
                 >
                   {HEALTH_LIST.map(h => <option key={h} value={h}>{h}</option>)}
                 </select>
+              </div>
+            </div>
+
+            <div className="col-span-2 p-3 bg-blue-50 rounded-lg border border-blue-100 flex items-center justify-between mt-2">
+              <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Jornada Laboral (DT Chile)</span>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox"
+                  id="schedule_active"
+                  checked={formEmployee.schedule?.active}
+                  onChange={e => setFormEmployee({...formEmployee, schedule: { ...formEmployee.schedule!, active: e.target.checked }})}
+                  className="rounded text-primary border-slate-300 focus:ring-primary/20 cursor-pointer"
+                />
+                <label htmlFor="schedule_active" className="text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">Seguimiento Activo</label>
+              </div>
+            </div>
+
+            <div className="col-span-2 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                  <Clock size={12} className="text-blue-500" />
+                  Entrada Pactada
+                </label>
+                <input 
+                  type="time" 
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm font-mono"
+                  value={formEmployee.schedule?.startTime}
+                  onChange={e => setFormEmployee({...formEmployee, schedule: { ...formEmployee.schedule!, startTime: e.target.value }})}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                  <Clock size={12} className="text-blue-500" />
+                  Salida Pactada
+                </label>
+                <input 
+                  type="time" 
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm font-mono"
+                  value={formEmployee.schedule?.endTime}
+                  onChange={e => setFormEmployee({...formEmployee, schedule: { ...formEmployee.schedule!, endTime: e.target.value }})}
+                />
               </div>
             </div>
 
