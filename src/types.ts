@@ -192,7 +192,10 @@ export interface AttendanceRecord {
   date: string;
   checkIn: string;
   checkOut?: string;
-  location?: { lat: number; lng: number };
+  locationIn?: { lat: number; lng: number };
+  locationOut?: { lat: number; lng: number };
+  status?: string;
+  compliance?: string;
 }
 
 export interface RiskPreventionRecord {

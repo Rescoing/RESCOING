@@ -22,7 +22,7 @@ import {
 import { motion } from 'motion/react';
 import { Document, Contact } from '../types';
 import Modal from './ui/Modal';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
 
@@ -249,6 +249,17 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
     setIsModalOpen(true);
   };
 
+  const handleDelete = async (id: string) => {
+    if (window.confirm('¿Está seguro de eliminar este documento? Esta acción es irreversible.')) {
+      try {
+        await deleteDoc(doc(db, 'documents', id));
+      } catch (error) {
+        console.error("Error deleting document:", error);
+        alert("Error al eliminar el documento");
+      }
+    }
+  };
+
   const filteredDocs = documents.filter(d => 
     d.type === activeTab && 
     (d.clientName.toLowerCase().includes(searchTerm.toLowerCase()) || d.folio.includes(searchTerm))
@@ -354,6 +365,13 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
                       </button>
                        <button className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-400 hover:text-slate-600" title="Descargar PDF">
                         <Download size={16} />
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(doc.id)}
+                        className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-400 hover:text-rose-500" 
+                        title="Eliminar Documento"
+                      >
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </td>
