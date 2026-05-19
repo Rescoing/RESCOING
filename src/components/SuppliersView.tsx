@@ -18,7 +18,9 @@ import {
   CheckCircle2,
   Clock,
   ArrowRight,
-  Bell
+  Bell,
+  Eye,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Supplier, PurchaseInvoice, PaymentNotice } from '../types';
@@ -36,6 +38,7 @@ export default function SuppliersView() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [isNoticeModalOpen, setIsNoticeModalOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -170,6 +173,15 @@ export default function SuppliersView() {
         paymentDate: new Date().toISOString().split('T')[0], 
         updatedAt: serverTimestamp() 
       });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const deleteInvoice = async (invoiceId: string) => {
+    if (!confirm('¿Está seguro de eliminar esta factura?')) return;
+    try {
+      await deleteDoc(doc(db, 'purchaseInvoices', invoiceId));
     } catch (error) {
       console.error(error);
     }
@@ -479,6 +491,13 @@ export default function SuppliersView() {
                               </td>
                               <td className="px-6 py-4 text-right">
                                 <div className="flex justify-end gap-2">
+                                  <button 
+                                    onClick={() => { setSelectedInvoice(inv); setIsDetailModalOpen(true); }}
+                                    className="p-2 text-slate-400 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                                    title="Ver Detalle Completo"
+                                  >
+                                    <Eye size={16} />
+                                  </button>
                                   {inv.status !== 'paid' && !inv.paymentNoticeId && (
                                     <button 
                                       onClick={() => { setSelectedInvoice(inv); setIsNoticeModalOpen(true); }}
@@ -497,6 +516,13 @@ export default function SuppliersView() {
                                       <CheckCircle2 size={16} />
                                     </button>
                                   )}
+                                  <button 
+                                    onClick={() => deleteInvoice(inv.id)}
+                                    className="p-2 text-rose-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                    title="Eliminar Registro"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -708,6 +734,93 @@ export default function SuppliersView() {
             Ingresar Gasto / Proveedor
           </button>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        title="Detalle de Factura de Compra"
+      >
+        {selectedInvoice && (
+          <div className="space-y-6 font-sans">
+            <div className="grid grid-cols-2 gap-6 pb-6 border-b border-slate-100">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Folio Documento</p>
+                <p className="text-xl font-bold text-slate-900 font-mono">#{selectedInvoice.folio}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Estado Actual</p>
+                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded inline-flex items-center gap-1.5
+                  ${selectedInvoice.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}
+                `}>
+                  {selectedInvoice.status === 'paid' ? 'DOCUMENTO PAGADO' : 'PENDIENTE DE PAGO'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Fecha Emisión</p>
+                <p className="text-sm font-bold text-slate-900">{selectedInvoice.date}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Vencimiento</p>
+                <p className="text-sm font-bold text-slate-900">{selectedInvoice.dueDate}</p>
+              </div>
+              {selectedInvoice.paymentDate && (
+                <div className="col-span-2 p-3 bg-emerald-50 rounded-lg border border-emerald-100">
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Fecha de Pago Real</p>
+                  <p className="text-sm font-bold text-emerald-900">{selectedInvoice.paymentDate}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-slate-50 p-6 rounded-xl space-y-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500 font-medium">Monto Neto</span>
+                <span className="font-bold text-slate-900 font-mono">${(selectedInvoice.netAmount || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500 font-medium">IVA (19%)</span>
+                <span className="font-bold text-slate-900 font-mono">${(selectedInvoice.iva || 0).toLocaleString()}</span>
+              </div>
+              <div className="pt-3 border-t border-slate-200 flex justify-between items-center">
+                <span className="text-xs font-black text-primary uppercase tracking-widest">Total a Pagar</span>
+                <span className="text-2xl font-black text-slate-900 font-mono">${(selectedInvoice.totalAmount || 0).toLocaleString()}</span>
+              </div>
+            </div>
+
+            {selectedInvoice.description && (
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Glosa / Descripción</p>
+                <div className="p-4 bg-white border border-slate-200 rounded-xl text-sm text-slate-600 italic leading-relaxed">
+                  {selectedInvoice.description}
+                </div>
+              </div>
+            )}
+
+            {selectedInvoice.paymentNoticeId && (
+              <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3">
+                <Bell size={18} className="text-indigo-600 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-indigo-900 uppercase tracking-widest">Aviso de Pago Registrado</p>
+                  <p className="text-xs text-indigo-700 mt-1">
+                    Existe un compromiso de pago activo para este documento.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4">
+              <button 
+                onClick={() => setIsDetailModalOpen(false)}
+                className="flex-1 bg-slate-900 text-white py-3 rounded-xl font-bold text-sm shadow-sm hover:bg-slate-800 transition-all"
+              >
+                Cerrar Detalle
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal
