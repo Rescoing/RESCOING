@@ -17,19 +17,20 @@ import {
   Search,
   Filter,
   FileText,
-  Table as TableIcon
+  Table as TableIcon,
+  TrendingUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Invoice, FinanceProcess, FinanceTask } from '../types';
+import { Invoice, FinanceProcess, FinanceTask, PurchaseInvoice, Payroll } from '../types';
 import Modal from './ui/Modal';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
 
-type FinanceTab = 'billing' | 'flow' | 'reminders';
+type FinanceTab = 'billing' | 'flow' | 'reminders' | 'balance';
 
 export default function FinanceView({ 
   autoOpen, 
@@ -39,6 +40,8 @@ export default function FinanceView({
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [processes, setProcesses] = useState<FinanceProcess[]>([]);
   const [tasks, setTasks] = useState<FinanceTask[]>([]);
+  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
+  const [payrolls, setPayrolls] = useState<Payroll[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState<FinanceTab>('billing');
@@ -72,10 +75,22 @@ export default function FinanceView({
       setLoading(false);
     });
 
+    const qPurchaseInvoices = query(collection(db, 'purchaseInvoices'), where('ownerId', '==', user.uid));
+    const unsubPurchase = onSnapshot(qPurchaseInvoices, (snapshot) => {
+      setPurchaseInvoices(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseInvoice)));
+    });
+
+    const qPayrolls = query(collection(db, 'payrolls'), where('ownerId', '==', user.uid));
+    const unsubPayrolls = onSnapshot(qPayrolls, (snapshot) => {
+      setPayrolls(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payroll)));
+    });
+
     return () => {
       unsubInvoices();
       unsubProcesses();
       unsubTasks();
+      unsubPurchase();
+      unsubPayrolls();
     };
   }, [user]);
 
@@ -338,7 +353,8 @@ export default function FinanceView({
         {[
           { id: 'billing', label: 'Facturación / Invoices', icon: FileCheck },
           { id: 'flow', label: 'Seguimiento de Flujo', icon: Activity },
-          { id: 'reminders', label: 'Recordatorios y Cobranza', icon: Bell },
+          { id: 'reminders', label: 'Remanentes y Cobranza', icon: Bell },
+          { id: 'balance', label: 'Balance Real (Gasto v/s Ingreso)', icon: TrendingUp },
         ].map(tab => (
           <button
             key={tab.id}
@@ -698,6 +714,125 @@ export default function FinanceView({
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'balance' && (
+          <motion.div 
+            key="balance"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="space-y-6"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-mono">
+              <div className="bg-emerald-50 p-8 rounded-2xl border border-emerald-100 shadow-sm">
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-4">Ingresos Totales (Ventas)</p>
+                <h3 className="text-3xl font-black text-emerald-900">${totalBilling.toLocaleString()}</h3>
+                <div className="mt-4 pt-4 border-t border-emerald-200/50 flex justify-between text-[11px] font-bold text-emerald-700">
+                  <span>Facturado Neto</span>
+                  <span>${invoices.reduce((sum, inv) => sum + (inv.netAmount || 0), 0).toLocaleString()}</span>
+                </div>
+              </div>
+              
+              <div className="bg-rose-50 p-8 rounded-2xl border border-rose-100 shadow-sm text-right">
+                <p className="text-[10px] font-black text-rose-600 uppercase tracking-[0.2em] mb-4">Gastos Consolidados</p>
+                <h3 className="text-3xl font-black text-rose-900">
+                  ${(purchaseInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0) + payrolls.reduce((sum, p) => sum + (p.netPay || 0), 0)).toLocaleString()}
+                </h3>
+                <div className="mt-4 pt-4 border-t border-rose-200/50 space-y-1">
+                  <div className="flex justify-between text-[11px] font-bold text-rose-700">
+                    <span>Proveedores</span>
+                    <span>${purchaseInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] font-bold text-rose-700">
+                    <span>Nómina / RRHH</span>
+                    <span>${payrolls.reduce((sum, p) => sum + (p.netPay || 0), 0).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 p-8 rounded-2xl shadow-xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+                  <Activity size={80} className="text-white" />
+                </div>
+                <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] mb-4">Resultado Operacional (Utilidad)</p>
+                <h3 className="text-3xl font-black text-white relative z-10">
+                  ${(totalBilling - (purchaseInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0) + payrolls.reduce((sum, p) => sum + (p.netPay || 0), 0))).toLocaleString()}
+                </h3>
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary transform origin-left" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
+                  <h4 className="font-bold text-slate-900 flex items-center gap-2">
+                    <ArrowDownLeft size={18} className="text-rose-500" />
+                    Mayores Gastos por Proveedor
+                  </h4>
+                </div>
+                <div className="p-6 space-y-4">
+                  {purchaseInvoices.length > 0 ? (
+                    Object.entries(
+                      purchaseInvoices.reduce((acc, inv) => {
+                        acc[inv.supplierId] = (acc[inv.supplierId] || 0) + (inv.totalAmount || 0);
+                        return acc;
+                      }, {} as Record<string, number>)
+                    )
+                    .sort(([, a], [, b]) => (b as number) - (a as number))
+                    .slice(0, 5)
+                    .map(([supplierId, total], i) => (
+                      <div key={i} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-xs">
+                            {i + 1}
+                          </div>
+                          <span className="text-sm font-bold text-slate-700">Proveedor ID: {supplierId.substring(0, 8)}</span>
+                        </div>
+                        <span className="font-mono font-bold text-slate-900">${total.toLocaleString()}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-400 italic text-center py-8">Sin registros de compras aún.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
+                  <h4 className="font-bold text-slate-900 flex items-center gap-2">
+                    <ArrowUpRight size={18} className="text-emerald-500" />
+                    Mayores Proyectos por Facturación
+                  </h4>
+                </div>
+                <div className="p-6 space-y-4">
+                  {invoices.length > 0 ? (
+                     Object.entries(
+                      invoices.reduce((acc, inv) => {
+                        acc[inv.client] = (acc[inv.client] || 0) + (inv.totalAmount || 0);
+                        return acc;
+                      }, {} as Record<string, number>)
+                    )
+                    .sort(([, a], [, b]) => (b as number) - (a as number))
+                    .slice(0, 5)
+                    .map(([client, total], i) => (
+                      <div key={i} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                            {i + 1}
+                          </div>
+                          <span className="text-sm font-bold text-slate-700">{client}</span>
+                        </div>
+                        <span className="font-mono font-bold text-slate-900">${total.toLocaleString()}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-400 italic text-center py-8">Sin registros de facturación aún.</p>
+                  )}
                 </div>
               </div>
             </div>

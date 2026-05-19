@@ -219,6 +219,19 @@ export interface PurchaseInvoice {
   totalAmount: number;
   status: 'pending' | 'paid' | 'overdue';
   description?: string;
+  paymentNoticeId?: string;
+  ownerId: string;
+}
+
+export interface PaymentNotice {
+  id: string;
+  invoiceId: string;
+  supplierId: string;
+  noticeDate: string;
+  plannedPaymentDate: string;
+  amount: number;
+  status: 'sent' | 'confirmed';
+  notes?: string;
   ownerId: string;
 }
 

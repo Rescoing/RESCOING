@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Briefcase, Package, TrendingUp, Layers, ChevronRight, Calendar, Download, Printer, FileDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import Modal from './ui/Modal';
-import { collection, query, where, getCountFromServer } from 'firebase/firestore';
+import { collection, query, where, getCountFromServer, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
 
@@ -15,7 +15,9 @@ export default function DashboardView({ onQuickAction }: DashboardViewProps) {
   const [stats, setStats] = useState({
     projectsCount: 0,
     lowStockCount: 0,
-    revenue: '$0.00'
+    revenue: 0,
+    expenses: 0,
+    balance: 0
   });
   const [loading, setLoading] = useState(true);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -28,29 +30,52 @@ export default function DashboardView({ onQuickAction }: DashboardViewProps) {
   useEffect(() => {
     if (!user) return;
 
-    const fetchStats = async () => {
-      try {
-        const projectsQuery = query(collection(db, 'projects'), where('ownerId', '==', user.uid));
-        const inventoryQuery = query(collection(db, 'inventory'), where('ownerId', '==', user.uid));
-        
-        const [projSnap, invSnap] = await Promise.all([
-          getCountFromServer(projectsQuery),
-          getCountFromServer(inventoryQuery)
-        ]);
+    let revenueVal = 0;
+    let purExpensesVal = 0;
+    let payrollVal = 0;
 
-        setStats({
-          projectsCount: projSnap.data().count,
-          lowStockCount: invSnap.data().count, // Simple count for now
-          revenue: '$124,500.00' // Keeping static for now or could fetch from invoices
-        });
-      } catch (error) {
-        console.error("Error fetching stats:", error);
-      } finally {
-        setLoading(false);
-      }
+    const updateFinancials = () => {
+      const expenses = purExpensesVal + payrollVal;
+      setStats(prev => ({
+        ...prev,
+        revenue: revenueVal,
+        expenses: expenses,
+        balance: revenueVal - expenses
+      }));
     };
 
-    fetchStats();
+    const unsubProjects = onSnapshot(query(collection(db, 'projects'), where('ownerId', '==', user.uid)), (snap) => {
+      setStats(prev => ({ ...prev, projectsCount: snap.size }));
+    });
+
+    const unsubInventory = onSnapshot(query(collection(db, 'inventory'), where('ownerId', '==', user.uid)), (snap) => {
+      setStats(prev => ({ ...prev, lowStockCount: snap.docs.filter(d => d.data().stock <= (d.data().minStock || 0)).length }));
+    });
+
+    const unsubInvoices = onSnapshot(query(collection(db, 'invoices'), where('ownerId', '==', user.uid)), (snap) => {
+      revenueVal = snap.docs.reduce((sum, d) => sum + (d.data().totalAmount || 0), 0);
+      updateFinancials();
+    });
+
+    const unsubPurchaseInvoices = onSnapshot(query(collection(db, 'purchaseInvoices'), where('ownerId', '==', user.uid)), (snap) => {
+      purExpensesVal = snap.docs.reduce((sum, d) => sum + (d.data().totalAmount || 0), 0);
+      updateFinancials();
+    });
+
+    const unsubPayrolls = onSnapshot(query(collection(db, 'payrolls'), where('ownerId', '==', user.uid)), (snap) => {
+      payrollVal = snap.docs.reduce((sum, d) => sum + (d.data().netPay || 0), 0);
+      updateFinancials();
+    });
+
+    setLoading(false);
+
+    return () => {
+      unsubProjects();
+      unsubInventory();
+      unsubInvoices();
+      unsubPurchaseInvoices();
+      unsubPayrolls();
+    };
   }, [user]);
 
   const handleGenerateReport = () => {
@@ -102,9 +127,9 @@ export default function DashboardView({ onQuickAction }: DashboardViewProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
           { label: 'Proyectos Activos', value: loading ? '...' : stats.projectsCount.toString(), icon: Briefcase, trend: '+2 nuevos', trendColor: 'text-emerald-600' },
-          { label: 'Inventario Crítico', value: loading ? '...' : stats.lowStockCount.toString(), icon: Package, trend: 'En sistema', trendColor: 'text-slate-500' },
-          { label: 'Ingresos Mensuales', value: stats.revenue, icon: TrendingUp, trend: '+12.4% vs mes ant.', trendColor: 'text-emerald-600' },
-          { label: 'Tareas Pendientes', value: '28', icon: Layers, trend: 'Estable', trendColor: 'text-slate-500' },
+          { label: 'Ingresos (Cta x Cobrar)', value: `$${stats.revenue.toLocaleString()}`, icon: TrendingUp, trend: 'Ventas Netas', trendColor: 'text-emerald-600' },
+          { label: 'Gastos (Proveedores + RRHH)', value: `$${stats.expenses.toLocaleString()}`, icon: Package, trend: 'Cargos Reales', trendColor: 'text-rose-600' },
+          { label: 'Balance Operativo', value: `$${stats.balance.toLocaleString()}`, icon: Layers, trend: stats.balance >= 0 ? 'Utilidad Bruta' : 'Déficit Temp.', trendColor: stats.balance >= 0 ? 'text-emerald-600' : 'text-rose-600' },
         ].map((stat, i) => (
           <motion.div 
             key={i}

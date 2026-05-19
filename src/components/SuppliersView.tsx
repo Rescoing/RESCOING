@@ -17,12 +17,13 @@ import {
   ChevronLeft,
   CheckCircle2,
   Clock,
-  ArrowRight
+  ArrowRight,
+  Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Supplier, PurchaseInvoice } from '../types';
+import { Supplier, PurchaseInvoice, PaymentNotice } from '../types';
 import Modal from './ui/Modal';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
 
@@ -30,10 +31,13 @@ export default function SuppliersView() {
   const { user } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([]);
+  const [notices, setNotices] = useState<PaymentNotice[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [isNoticeModalOpen, setIsNoticeModalOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
@@ -47,12 +51,18 @@ export default function SuppliersView() {
     const iq = query(collection(db, 'purchaseInvoices'), where('ownerId', '==', user.uid));
     const unsubscribeInvoices = onSnapshot(iq, (snapshot) => {
       setInvoices(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PurchaseInvoice)));
+    });
+
+    const nq = query(collection(db, 'paymentNotices'), where('ownerId', '==', user.uid));
+    const unsubscribeNotices = onSnapshot(nq, (snapshot) => {
+      setNotices(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PaymentNotice)));
       setLoading(false);
     });
 
     return () => {
       unsubscribeSuppliers();
       unsubscribeInvoices();
+      unsubscribeNotices();
     };
   }, [user]);
 
@@ -77,6 +87,12 @@ export default function SuppliersView() {
     totalAmount: 0,
     description: '',
     status: 'pending'
+  });
+
+  const [newNotice, setNewNotice] = useState<Partial<PaymentNotice>>({
+    plannedPaymentDate: new Date().toISOString().split('T')[0],
+    notes: '',
+    status: 'sent'
   });
 
   const handleSubmit = async (e: FormEvent) => {
@@ -117,6 +133,32 @@ export default function SuppliersView() {
     } catch (error) {
       console.error(error);
       alert('Error registrando factura');
+    }
+  };
+
+  const handleNoticeSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!user || !selectedSupplier || !selectedInvoice) return;
+
+    try {
+      const noticeRef = await addDoc(collection(db, 'paymentNotices'), {
+        ...newNotice,
+        invoiceId: selectedInvoice.id,
+        supplierId: selectedSupplier.id,
+        amount: selectedInvoice.totalAmount,
+        noticeDate: new Date().toISOString().split('T')[0],
+        ownerId: user.uid,
+        createdAt: serverTimestamp()
+      });
+
+      await updateDoc(doc(db, 'purchaseInvoices', selectedInvoice.id), {
+        paymentNoticeId: noticeRef.id
+      });
+
+      setIsNoticeModalOpen(false);
+      setNewNotice({ plannedPaymentDate: new Date().toISOString().split('T')[0], notes: '', status: 'sent' });
+    } catch (error) {
+      console.error(error);
     }
   };
 
@@ -408,7 +450,10 @@ export default function SuppliersView() {
                                   <span className={`text-sm font-bold ${isOverdue ? 'text-rose-600' : 'text-slate-600'}`}>
                                     {inv.dueDate}
                                   </span>
-                                  {isOverdue && (
+                                  {inv.paymentDate && (
+                                    <span className="text-[9px] font-black text-emerald-600 uppercase tracking-tighter bg-emerald-50 px-1 rounded w-fit">Pagado: {inv.paymentDate}</span>
+                                  )}
+                                  {isOverdue && !inv.paymentDate && (
                                     <span className="text-[9px] font-bold text-rose-500 uppercase tracking-tighter">Atrasado</span>
                                   )}
                                 </div>
@@ -417,24 +462,42 @@ export default function SuppliersView() {
                                 <span className="font-mono font-bold text-slate-900">${inv.totalAmount?.toLocaleString()}</span>
                               </td>
                               <td className="px-6 py-4">
-                                <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded inline-flex items-center gap-1.5
-                                  ${inv.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 
-                                    isOverdue ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}
-                                `}>
-                                  {inv.status === 'paid' ? <CheckCircle2 size={10} /> : <Clock size={10} />}
-                                  {inv.status === 'paid' ? 'Pagado' : isOverdue ? 'Vencido' : 'Pendiente'}
-                                </span>
+                                <div className="flex flex-col gap-1">
+                                  <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded inline-flex items-center gap-1.5
+                                    ${inv.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 
+                                      isOverdue ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}
+                                  `}>
+                                    {inv.status === 'paid' ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+                                    {inv.status === 'paid' ? 'Pagado' : isOverdue ? 'Vencido' : 'Pendiente'}
+                                  </span>
+                                  {inv.paymentNoticeId && (
+                                    <span className="text-[9px] font-bold text-indigo-600 uppercase bg-indigo-50 px-2 py-0.5 rounded text-center border border-indigo-100">
+                                      Aviso Enviado
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-6 py-4 text-right">
-                                {inv.status !== 'paid' && (
-                                  <button 
-                                    onClick={() => markAsPaid(inv.id)}
-                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-transparent hover:border-emerald-100 shadow-sm"
-                                    title="Marcar como pagado"
-                                  >
-                                    <DollarSign size={16} />
-                                  </button>
-                                )}
+                                <div className="flex justify-end gap-2">
+                                  {inv.status !== 'paid' && !inv.paymentNoticeId && (
+                                    <button 
+                                      onClick={() => { setSelectedInvoice(inv); setIsNoticeModalOpen(true); }}
+                                      className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors border border-transparent hover:border-indigo-100 shadow-sm"
+                                      title="Programar Aviso de Pago"
+                                    >
+                                      <Bell size={16} />
+                                    </button>
+                                  )}
+                                  {inv.status !== 'paid' && (
+                                    <button 
+                                      onClick={() => markAsPaid(inv.id)}
+                                      className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-transparent hover:border-emerald-100 shadow-sm"
+                                      title="Confirmar Pago Ejecutado"
+                                    >
+                                      <CheckCircle2 size={16} />
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -643,6 +706,50 @@ export default function SuppliersView() {
           >
             <DollarSign size={18} />
             Ingresar Gasto / Proveedor
+          </button>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={isNoticeModalOpen}
+        onClose={() => setIsNoticeModalOpen(false)}
+        title="Programar Aviso de Pago"
+      >
+        <form onSubmit={handleNoticeSubmit} className="space-y-4 font-sans text-left">
+          <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl mb-4">
+            <h4 className="text-xs font-black text-indigo-700 uppercase tracking-widest mb-1">Detalle del Documento</h4>
+            <p className="text-sm font-bold text-slate-800">Folio: #{selectedInvoice?.folio}</p>
+            <p className="text-sm font-bold text-slate-800">Monto: ${selectedInvoice?.totalAmount.toLocaleString()}</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Fecha Programada de Pago</label>
+            <input 
+              required
+              type="date" 
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-200 text-sm"
+              value={newNotice.plannedPaymentDate}
+              onChange={e => setNewNotice({...newNotice, plannedPaymentDate: e.target.value})}
+            />
+            <p className="text-[10px] text-slate-400 mt-1">Esta fecha se notificará al proveedor como compromiso de pago.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Notas / Comentarios Adjuntos</label>
+            <textarea 
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-200 text-sm h-24 resize-none"
+              placeholder="Ej: Pago se realizará vía transferencia electrónica..."
+              value={newNotice.notes}
+              onChange={e => setNewNotice({...newNotice, notes: e.target.value})}
+            />
+          </div>
+
+          <button 
+            type="submit"
+            className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-sm shadow-md hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+          >
+            <Bell size={18} />
+            Confirmar Aviso de Pago
           </button>
         </form>
       </Modal>
