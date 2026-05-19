@@ -179,6 +179,24 @@ export default function SuppliersView() {
     }
   };
 
+  const updateInvoiceStatus = async (invoiceId: string, newStatus: 'pending' | 'paid' | 'overdue') => {
+    try {
+      const docRef = doc(db, 'purchaseInvoices', invoiceId);
+      const updates: any = { status: newStatus, updatedAt: serverTimestamp() };
+      
+      if (newStatus === 'paid') {
+        updates.paymentDate = new Date().toISOString().split('T')[0];
+      } else {
+        updates.paymentDate = null;
+      }
+      
+      await updateDoc(docRef, updates);
+    } catch (error) {
+      console.error(error);
+      alert('Error al actualizar el estado');
+    }
+  };
+
   const deleteInvoice = async (invoiceId: string) => {
     if (!confirm('¿Está seguro de eliminar esta factura?')) return;
     try {
@@ -574,14 +592,53 @@ export default function SuppliersView() {
           exit={{ opacity: 0, scale: 0.98 }}
           className="space-y-6 text-left"
         >
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-3xl font-bold tracking-tight text-slate-900">Administración de Compras</h2>
-                <p className="text-slate-500 mt-1">Control centralizado de facturas recibidas y compromisos de pago.</p>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-3xl font-bold tracking-tight text-slate-900">Administración de Compras</h2>
+              <p className="text-slate-500 mt-1">Control centralizado de facturas recibidas y compromisos de pago.</p>
+            </div>
+          </div>
+
+          {/* Alertas de Vencimiento */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-rose-50 border border-rose-100 p-4 rounded-xl">
+              <div className="flex items-center gap-3 mb-2">
+                <AlertTriangle className="text-rose-600" size={20} />
+                <span className="text-xs font-black text-rose-700 uppercase tracking-widest">Facturas Vencidas</span>
               </div>
+              <p className="text-2xl font-black text-rose-900 font-mono">
+                ${overdueInvoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0).toLocaleString()}
+              </p>
+              <p className="text-[10px] text-rose-600 font-bold uppercase mt-1">{overdueInvoices.length} Documentos atrasados</p>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4">
+            <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl">
+              <div className="flex items-center gap-3 mb-2">
+                <Clock className="text-amber-600" size={20} />
+                <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Vence pronto (7 días)</span>
+              </div>
+              <p className="text-2xl font-black text-amber-900 font-mono">
+                ${upcomingPayments.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0).toLocaleString()}
+              </p>
+              <p className="text-[10px] text-amber-600 font-bold uppercase mt-1">{upcomingPayments.length} Por vencer</p>
+            </div>
+
+            <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl">
+              <div className="flex items-center gap-3 mb-2">
+                <CheckCircle2 className="text-emerald-600" size={20} />
+                <span className="text-xs font-black text-emerald-700 uppercase tracking-widest">Pagado este mes</span>
+              </div>
+              <p className="text-2xl font-black text-emerald-900 font-mono">
+                ${invoices
+                  .filter(inv => inv.status === 'paid' && inv.paymentDate?.startsWith(new Date().toISOString().slice(0, 7)))
+                  .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0)
+                  .toLocaleString()}
+              </p>
+              <p className="text-[10px] text-emerald-600 font-bold uppercase mt-1">Gestión mensual exitosa</p>
+            </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input 
@@ -663,15 +720,19 @@ export default function SuppliersView() {
                                   >
                                     <Eye size={16} />
                                   </button>
-                                  {inv.status !== 'paid' && (
-                                    <button 
-                                      onClick={() => markAsPaid(inv.id)}
-                                      className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-transparent hover:border-emerald-100 shadow-sm"
-                                      title="Confirmar Pago"
+                                  
+                                  <div className="relative group/status px-2 py-1 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-1">
+                                    <select 
+                                      className="text-[10px] font-bold bg-transparent border-none appearance-none cursor-pointer focus:outline-none pr-4"
+                                      value={inv.status}
+                                      onChange={(e) => updateInvoiceStatus(inv.id, e.target.value as any)}
                                     >
-                                      <CheckCircle2 size={16} />
-                                    </button>
-                                  )}
+                                      <option value="pending">PENDIENTE</option>
+                                      <option value="paid">PAGADO</option>
+                                    </select>
+                                    <Clock size={10} className="absolute right-2 text-slate-400 pointer-events-none" />
+                                  </div>
+
                                   <button 
                                     onClick={() => deleteInvoice(inv.id)}
                                     className="p-2 text-slate-200 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
