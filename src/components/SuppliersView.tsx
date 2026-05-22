@@ -160,6 +160,50 @@ export default function SuppliersView() {
         paymentNoticeId: noticeRef.id
       });
 
+      // 1. Create a System Notification
+      await addDoc(collection(db, 'notifications'), {
+        ownerId: user.uid,
+        title: '📆 Aviso de Pago Programado',
+        message: `Se ha programado un aviso de pago para el proveedor "${selectedSupplier.name}" (Folio Factura #${selectedInvoice.folio}) por un monto de $${selectedInvoice.totalAmount?.toLocaleString()} para el ${newNotice.plannedPaymentDate}. Notas: ${newNotice.notes || 'Ninguna'}.`,
+        type: 'warning',
+        read: false,
+        createdAt: serverTimestamp()
+      });
+
+      // 2. Dispatch email notification to rescoing@gmail.com dynamically
+      const emailMessage = `
+Aviso de Pago Programado (ERP Rescoing)
+
+Detalles del compromiso de pago:
+- Proveedor: ${selectedSupplier.name}
+- RUT de Empresa: ${selectedSupplier.rutEmpresa || 'No registrado'}
+- Factura Folio: #${selectedInvoice.folio}
+- Monto del Documento: $${selectedInvoice.totalAmount?.toLocaleString()}
+- Fecha Programada de Pago: ${newNotice.plannedPaymentDate}
+- Comentarios adjuntos: ${newNotice.notes || 'Sin comentarios'}
+
+Notificación automática emitida por el Sistema ERP.
+      `;
+
+      fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          access_key: '62df9ff2-6eac-4e4b-97fc-c999cb5038c3',
+          name: 'Notificaciones ERP',
+          email: 'notificaciones@escoing.com',
+          to_email: 'rescoing@gmail.com',
+          subject: `📆 ERP AVISO DE PAGO: ${selectedSupplier.name} ($${selectedInvoice.totalAmount?.toLocaleString()})`,
+          message: emailMessage
+        })
+      })
+      .then(res => res.json())
+      .then(data => console.log('Web3Forms dispatch success:', data))
+      .catch(err => console.warn('Web3Forms dispatch error/offline:', err));
+
       setIsNoticeModalOpen(false);
       setNewNotice({ plannedPaymentDate: new Date().toISOString().split('T')[0], notes: '', status: 'sent' });
     } catch (error) {

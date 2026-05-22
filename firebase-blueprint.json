@@ -253,6 +253,20 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "employeeId", "month", "year", "netPay"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System notification or action alert",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["info", "warning", "success", "error"] },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title", "message", "type", "read"]
     }
   },
   "firestore": {
@@ -323,6 +337,10 @@
     "/payrolls/{payrollId}": {
       "schema": "Payroll",
       "description": "Employee Payrolls"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "System alerts and notifications"
     }
   }
 }

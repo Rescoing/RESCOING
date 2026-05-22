@@ -26,7 +26,8 @@ import {
   FolderOpen,
   Clock,
   XCircle,
-  Shield
+  Shield,
+  Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Module, Item, Contact, Project, Invoice, Document, Supplier, Employee, FinanceProcess, FinanceTask, RiskPreventionRecord } from './types';
@@ -43,7 +44,7 @@ import AdminUsersView from './components/AdminUsersView';
 import { FirebaseProvider, useAuth } from './components/FirebaseProvider';
 import LoginView from './components/LoginView';
 import SettingsModal from './components/SettingsModal';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, orderBy } from 'firebase/firestore';
 import { db } from './lib/firebase';
 
 export default function App() {
@@ -64,6 +65,10 @@ function AppContent() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [autoOpenModal, setAutoOpenModal] = useState(false);
 
+  // Notifications State
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+
   useEffect(() => {
     if (!user || (profile?.accessStatus !== 'approved' && profile?.role !== 'admin')) return;
     const q = query(collection(db, 'contacts'), where('ownerId', '==', user.uid));
@@ -74,6 +79,50 @@ function AppContent() {
     });
     return unsubscribe;
   }, [user, profile]);
+
+  useEffect(() => {
+    if (!user || (profile?.accessStatus !== 'approved' && profile?.role !== 'admin')) return;
+    const q = query(collection(db, 'notifications'), where('ownerId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      items.sort((a: any, b: any) => {
+        const timeA = a.createdAt?.seconds || 0;
+        const timeB = b.createdAt?.seconds || 0;
+        return timeB - timeA;
+      });
+      setNotifications(items);
+    }, (error) => {
+      console.error("Notifications global listener error:", error);
+    });
+    return unsubscribe;
+  }, [user, profile]);
+
+  const markAllAsRead = async () => {
+    try {
+      const unread = notifications.filter(n => !n.read);
+      for (const n of unread) {
+        await updateDoc(doc(db, 'notifications', n.id), { read: true });
+      }
+    } catch (e) {
+      console.error("Error marking all read:", e);
+    }
+  };
+
+  const markAsRead = async (id: string) => {
+    try {
+      await updateDoc(doc(db, 'notifications', id), { read: true });
+    } catch (e) {
+      console.error("Error marking read:", e);
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'notifications', id));
+    } catch (e) {
+      console.error("Error deleting notification:", e);
+    }
+  };
 
   const handleQuickAction = (action: string) => {
     setAutoOpenModal(true);
@@ -272,6 +321,94 @@ function AppContent() {
                 className="w-64 h-9 bg-slate-50 border border-slate-200 rounded-md px-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-sans"
               />
             </div>
+
+            {/* Notification Bell Component */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative flex items-center justify-center border border-slate-100 bg-slate-50 shadow-sm"
+              >
+                <Bell size={18} className="text-slate-600" />
+                {notifications.filter(n => !n.read).length > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-rose-500 rounded-full border-2 border-white flex items-center justify-center text-[9px] font-black text-white px-0.5 animate-pulse">
+                    {notifications.filter(n => !n.read).length}
+                  </span>
+                )}
+              </button>
+              
+              <AnimatePresence>
+                {isNotificationsOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsNotificationsOpen(false)} />
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 mt-2 w-80 max-w-sm bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden z-50 text-left min-w-[320px]"
+                    >
+                      <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                        <span className="font-bold text-slate-800 text-sm">Avisos y Alertas ({notifications.filter(n => !n.read).length})</span>
+                        {notifications.filter(n => !n.read).length > 0 && (
+                          <button 
+                            onClick={markAllAsRead}
+                            className="text-xs text-primary hover:underline font-bold"
+                          >
+                            Marcar todo leído
+                          </button>
+                        )}
+                      </div>
+                      
+                      <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 custom-scrollbar">
+                        {notifications.length > 0 ? (
+                          notifications.map((notif) => (
+                            <div 
+                              key={notif.id} 
+                              className={`p-4 hover:bg-slate-50 transition-colors flex gap-3 relative ${!notif.read ? 'bg-indigo-50/10' : ''}`}
+                            >
+                              {!notif.read && (
+                                <div className="absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-primary rounded-full" />
+                              )}
+                              <div className="flex-1 pl-1">
+                                <p className="text-xs font-bold text-slate-950 leading-normal">{notif.title}</p>
+                                <p className="text-xs text-slate-600 mt-1 leading-relaxed whitespace-pre-wrap">{notif.message}</p>
+                                <p className="text-[10px] text-slate-400 mt-1.5 font-medium">
+                                  {notif.createdAt?.seconds ? new Date(notif.createdAt.seconds * 1000).toLocaleString() : 'Recién'}
+                                </p>
+                              </div>
+                              <div className="flex flex-col gap-2 shrink-0 justify-center">
+                                {!notif.read && (
+                                  <button 
+                                    onClick={() => markAsRead(notif.id)}
+                                    className="p-1 hover:bg-slate-200 rounded text-primary transition-colors-all"
+                                    title="Marcar leído"
+                                  >
+                                    <FileCheck size={14} />
+                                  </button>
+                                )}
+                                <button 
+                                  onClick={() => deleteNotification(notif.id)}
+                                  className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-rose-600 transition-colors-all"
+                                  title="Eliminar"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-8 text-center text-slate-400">
+                            <Bell size={28} className="mx-auto mb-2 opacity-30" />
+                            <p className="text-xs font-medium">No hay alertas en el sistema</p>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+
             <div className="flex items-center gap-3 pl-6 border-l border-slate-100">
               <div className="flex flex-col items-end">
                 <span className="text-sm font-bold text-slate-900">{profile?.displayName || user?.displayName || 'Usuario'}</span>
