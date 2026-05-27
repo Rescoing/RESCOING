@@ -205,6 +205,8 @@ export default function LibraryView() {
     if (['png', 'jpg', 'jpeg', 'gif', 'svg'].includes(ext || '')) return 'image/' + ext;
     if (['xlsx', 'xls'].includes(ext || '')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     if (ext === 'csv') return 'text/csv';
+    if (ext === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (ext === 'doc') return 'application/msword';
     return 'text/plain';
   };
 
@@ -360,11 +362,17 @@ export default function LibraryView() {
   const displayedFolders = displayedFilesAndFolders.filter(item => item.isFolder);
   const displayedFiles = displayedFilesAndFolders.filter(item => !item.isFolder);
 
-  const getFileIcon = (fileType: string) => {
+  const getFileIcon = (fileType: string, fileName: string = '') => {
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
     if (fileType.includes('folder')) return <Folder size={24} className="text-amber-500 fill-amber-300" />;
-    if (fileType.includes('image')) return <ImageIcon size={22} className="text-blue-500" />;
-    if (fileType.includes('pdf')) return <FileText size={22} className="text-rose-500" />;
-    if (fileType.includes('sheet') || fileType.includes('csv') || fileType.includes('excel')) return <FileText size={22} className="text-emerald-500 animate-pulse" />;
+    if (fileType.includes('image') || ['png', 'jpg', 'jpeg', 'gif', 'svg'].includes(ext)) return <ImageIcon size={22} className="text-blue-500" />;
+    if (fileType.includes('pdf') || ext === 'pdf') return <FileText size={22} className="text-rose-500" />;
+    if (fileType.includes('sheet') || fileType.includes('excel') || fileType.includes('csv') || ['xlsx', 'xls', 'csv'].includes(ext)) {
+      return <FileText size={22} className="text-emerald-500" />;
+    }
+    if (fileType.includes('word') || fileType.includes('officedocument.wordprocessingml') || fileType.includes('msword') || ['docx', 'doc'].includes(ext)) {
+      return <FileText size={22} className="text-blue-600 font-bold" />;
+    }
     return <File size={22} className="text-slate-500" />;
   };
 
@@ -548,7 +556,7 @@ export default function LibraryView() {
                   />
                 ) : (
                   <div className="text-slate-400 flex flex-col items-center justify-center gap-1.5 mt-4">
-                    {getFileIcon(item.fileType)}
+                    {getFileIcon(item.fileType, item.fileName)}
                     <span className="text-[10px] uppercase font-black tracking-wider text-slate-400">
                       {item.fileName.split('.').pop()}
                     </span>
@@ -735,7 +743,7 @@ export default function LibraryView() {
               {uploadQueue.map((q, idx) => (
                 <div key={idx} className="p-3 flex items-center justify-between gap-3 bg-white">
                   <div className="flex items-center gap-3 min-w-0">
-                    {getFileIcon(q.file.type)}
+                    {getFileIcon(q.file.type, q.file.name)}
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-slate-800 truncate">{q.file.name}</p>
                       <p className="text-[10px] text-slate-400">{(q.file.size / 1024).toFixed(1)} KB</p>
@@ -950,6 +958,16 @@ function VisorDocumento({ item }: { item: LibraryItem | null }) {
   const handleRotate = () => setRotation(prev => (prev + 90) % 360);
 
   const fileType = item.fileType.toLowerCase();
+  const ext = item.fileName.split('.').pop()?.toLowerCase() || '';
+
+  // Word Documents (DOC / DOCX)
+  if (fileType.includes('word') || fileType.includes('officedocument.wordprocessingml') || fileType.includes('msword') || ['docx', 'doc'].includes(ext)) {
+    return (
+      <div className="w-full bg-slate-50 rounded-xl p-2 h-full flex flex-col justify-start">
+        <DocxPreview fileData={item.fileData} />
+      </div>
+    );
+  }
 
   // Excel / CSV Spreadsheets
   if (fileType.includes('sheet') || fileType.includes('excel') || item.fileName.endsWith('.xlsx') || item.fileName.endsWith('.xls') || item.fileName.endsWith('.csv')) {
@@ -1075,6 +1093,142 @@ function VisorDocumento({ item }: { item: LibraryItem | null }) {
       </div>
 
       <p className="text-[10px] text-slate-400 mt-4 leading-normal">Por favor, presione el botón de descarga para operar sobre el archivo localmente.</p>
+    </div>
+  );
+}
+
+// Microsoft Word (.docx / .doc) Document Previewer
+function DocxPreview({ fileData }: { fileData: string }) {
+  const [html, setHtml] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    let active = true;
+    async function convert() {
+      try {
+        setLoading(true);
+        const base64Clean = fileData.split(';base64,')[1] || fileData;
+        const binaryString = atob(base64Clean);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const arrayBuffer = bytes.buffer;
+        
+        const mammoth = await import('mammoth');
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        
+        if (active) {
+          setHtml(result.value);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error("Mammoth conversion error:", err);
+        if (active) {
+          setError("No se pudo extraer el contenido del documento Word. Asegúrate de que el archivo no esté dañado.");
+          setLoading(false);
+        }
+      }
+    }
+    
+    convert();
+    return () => {
+      active = false;
+    };
+  }, [fileData]);
+
+  if (loading) {
+    return (
+      <div className="p-12 text-center text-slate-400 text-xs font-bold animate-pulse flex flex-col items-center justify-center gap-3">
+        <RotateCw className="animate-spin text-indigo-600" size={24} />
+        <span>Interpretando formato binario de Microsoft Word...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return <div className="p-4 text-xs font-bold text-rose-500 bg-rose-50 rounded-xl leading-relaxed">{error}</div>;
+  }
+
+  return (
+    <div className="w-full h-full flex flex-col gap-2">
+      <div className="flex items-center gap-2 p-2 px-3 bg-blue-50 text-blue-800 rounded-lg text-xs font-bold border border-blue-100 shrink-0">
+        <FileText size={15} className="text-blue-600" />
+        <span>Visor de Documento Word Integrado</span>
+      </div>
+      
+      <div className="w-full overflow-auto max-h-[500px] bg-slate-100 p-4 rounded-xl border border-slate-200 flex justify-center custom-scrollbar">
+        <div 
+          className="bg-white p-8 md:p-12 shadow-md rounded-lg max-w-4xl w-full text-left font-sans text-sm text-slate-800 leading-relaxed docx-parsed-content"
+          dangerouslySetInnerHTML={{ __html: html || '<p class="text-slate-400 italic">El archivo no tiene contenido legible.</p>' }}
+        />
+      </div>
+      
+      <style>{`
+        .docx-parsed-content h1 {
+          font-size: 1.5rem;
+          font-weight: 800;
+          color: #0f172a;
+          margin-top: 1.5rem;
+          margin-bottom: 0.75rem;
+          border-bottom: 1px solid #e2e8f0;
+          padding-bottom: 0.25rem;
+        }
+        .docx-parsed-content h2 {
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: #1e293b;
+          margin-top: 1.25rem;
+          margin-bottom: 0.5rem;
+        }
+        .docx-parsed-content h3 {
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: #334155;
+          margin-top: 1rem;
+          margin-bottom: 0.5rem;
+        }
+        .docx-parsed-content p {
+          margin-bottom: 0.75rem;
+          text-align: justify;
+        }
+        .docx-parsed-content table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 1rem;
+          margin-bottom: 1rem;
+          font-size: 0.85rem;
+        }
+        .docx-parsed-content table th, 
+        .docx-parsed-content table td {
+          border: 1px solid #cbd5e1;
+          padding: 0.5rem;
+          text-align: left;
+        }
+        .docx-parsed-content table th {
+          background-color: #f8fafc;
+          font-weight: 700;
+        }
+        .docx-parsed-content ul {
+          list-style-type: disc;
+          padding-left: 1.5rem;
+          margin-bottom: 0.75rem;
+        }
+        .docx-parsed-content ol {
+          list-style-type: decimal;
+          padding-left: 1.5rem;
+          margin-bottom: 0.75rem;
+        }
+        .docx-parsed-content li {
+          margin-bottom: 0.25rem;
+        }
+        .docx-parsed-content a {
+          color: #2563eb;
+          text-decoration: underline;
+        }
+      `}</style>
     </div>
   );
 }
