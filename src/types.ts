@@ -78,6 +78,8 @@ export interface Invoice {
   totalAmount: number;
   siiFolio?: string;
   paymentMethod?: 'Transferencia' | 'Efectivo' | 'Tarjeta' | 'Cheque';
+  emailAlertSent?: boolean;
+  emailAlertSentDate?: string;
 }
 
 export interface DocumentItem {

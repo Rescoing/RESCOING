@@ -18,7 +18,11 @@ import {
   Filter,
   FileText,
   Table as TableIcon,
-  TrendingUp
+  TrendingUp,
+  Mail,
+  Send,
+  Loader2,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Invoice, FinanceProcess, FinanceTask, PurchaseInvoice, Payroll } from '../types';
@@ -52,6 +56,101 @@ export default function FinanceView({
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   
   const selectedProcess = processes.find(p => p.id === selectedProcessId);
+  
+  // Web3Forms automated payment alert state
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+  const [selectedInvoiceForAlert, setSelectedInvoiceForAlert] = useState<Invoice | null>(null);
+  const [alertSubject, setAlertSubject] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+  const [isSendingAlert, setIsSendingAlert] = useState(false);
+  const [alertSuccess, setAlertSuccess] = useState<boolean | null>(null);
+
+  const openAlertModal = (invoice: Invoice) => {
+    setSelectedInvoiceForAlert(invoice);
+    setAlertSubject(`⚠️ ERP ALERTA DE PAGO: Documento pendiente de ${invoice.client}`);
+    
+    const msg = `Estimado(a) Cliente,
+
+Junto con saludarle, nos contactamos del Departamento de Finanzas. Queremos recordarle de la siguiente alerta de pago en nuestro sistema:
+
+Detalles de la factura:
+- Cliente: ${invoice.client}
+- Rut: ${invoice.rut || 'No especificado'}
+- Folio SII: #${invoice.siiFolio || invoice.id.substring(0, 8).toUpperCase()}
+- Estado del Documento: ${invoice.status === 'Vencido' ? '❌ VENCIDO' : '⚠️ PENDIENTE'}
+- Fecha de Emisión: ${invoice.date}
+- Fecha de Vencimiento: ${invoice.dueDate || 'Inmediato'}
+- Monto Total a Pagar: $${invoice.totalAmount?.toLocaleString()}
+
+Por favor, canalizar el pago correspondiente de manera oportuna. Si ya realizó la transferencia, agradeceremos ignorar esta alerta o enviarnos el comprobante de pago.
+
+Atentamente,
+Departamento de Cobranzas / ERP Rescoing`;
+    setAlertMessage(msg);
+    setAlertSuccess(null);
+    setIsAlertModalOpen(true);
+  };
+
+  const handleSendPaymentAlert = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!selectedInvoiceForAlert || !user) return;
+
+    setIsSendingAlert(true);
+    setAlertSuccess(null);
+
+    try {
+      const response = await fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          access_key: '62df9ff2-6eac-4e4b-97fc-c999cb5038c3',
+          name: 'Notificaciones Cobranza ERP',
+          email: 'notificaciones@escoing.com',
+          to_email: 'rescoing@gmail.com',
+          subject: alertSubject,
+          message: alertMessage
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Save the alert state in invoice in Firestore
+        const docRef = doc(db, 'invoices', selectedInvoiceForAlert.id);
+        const alertTimestamp = new Date().toLocaleString('es-CL');
+        await updateDoc(docRef, {
+          emailAlertSent: true,
+          emailAlertSentDate: alertTimestamp
+        });
+
+        // Also add a system log/notification
+        await addDoc(collection(db, 'notifications'), {
+          ownerId: user.uid,
+          title: '📧 Alerta de Pago Enviada por Email',
+          message: `Se ha enviado un aviso de cobro formal por la factura a "${selectedInvoiceForAlert.client}" ($${selectedInvoiceForAlert.totalAmount?.toLocaleString()}) a rescoing@gmail.com.`,
+          type: 'info',
+          read: false,
+          createdAt: serverTimestamp()
+        });
+
+        setAlertSuccess(true);
+        setTimeout(() => {
+          setIsAlertModalOpen(false);
+          setSelectedInvoiceForAlert(null);
+        }, 1500);
+      } else {
+        setAlertSuccess(false);
+      }
+    } catch (err) {
+      console.error("Error sending email via Web3Forms:", err);
+      setAlertSuccess(false);
+    } finally {
+      setIsSendingAlert(false);
+    }
+  };
   
   useEffect(() => {
     if (!user) return;
@@ -574,6 +673,7 @@ export default function FinanceView({
                       <th className="px-6 py-4">Cliente Corporativo</th>
                       <th className="px-6 py-4">Medio de Pago</th>
                       <th className="px-6 py-4">Estado</th>
+                      <th className="px-6 py-4">Alerta Email</th>
                       <th className="px-6 py-4">Emisión</th>
                       <th className="px-6 py-4 text-right">Importe Total</th>
                     </tr>
@@ -592,11 +692,42 @@ export default function FinanceView({
                             {inv.status}
                           </span>
                         </td>
+                        <td className="px-6 py-4">
+                          {inv.status === 'Pagado' ? (
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Completado</span>
+                          ) : inv.emailAlertSent ? (
+                            <div className="flex flex-col" title={`Enviado el ${inv.emailAlertSentDate}`}>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100 w-fit inline-flex items-center gap-1">
+                                <Check size={8} className="stroke-[3]" />
+                                <span>Enviado</span>
+                              </span>
+                              <span className="text-[8px] text-indigo-505 font-medium font-mono mt-0.5">{inv.emailAlertSentDate}</span>
+                            </div>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-slate-50 text-slate-500 border border-slate-200 w-fit">
+                              Sin Enviar
+                            </span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-slate-500 font-medium">{inv.date}</td>
                         <td className="px-6 py-4 text-right">
-                          <div className="flex flex-col items-end gap-1">
-                            <span className="font-mono font-bold text-slate-900">${inv.totalAmount?.toLocaleString()}</span>
-                            <button className="text-[10px] font-bold text-primary uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">PDF</button>
+                          <div className="flex items-center justify-end gap-3">
+                            <div className="flex flex-col items-end">
+                              <span className="font-mono font-bold text-slate-900">${inv.totalAmount?.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline cursor-pointer">PDF</button>
+                              {inv.status !== 'Pagado' && (
+                                <button 
+                                  onClick={() => openAlertModal(inv)}
+                                  className="text-[9px] bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 border border-transparent font-black px-1.5 py-0.5 rounded inline-flex items-center gap-1 transition-all cursor-pointer"
+                                  title="Enviar Alerta de Pago a rescoing@gmail.com"
+                                >
+                                  <Mail size={10} />
+                                  <span>Alerta</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -749,22 +880,37 @@ export default function FinanceView({
                           <p className="text-xs text-rose-600 font-bold uppercase tracking-widest">Venció: {inv.dueDate || inv.date}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-4">
                         <div className="text-right">
                           <p className="text-xs font-mono font-bold text-slate-900">${inv.totalAmount?.toLocaleString()}</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{inv.status}</p>
+                          {inv.emailAlertSent ? (
+                            <span className="text-[8px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 block uppercase tracking-wider mt-0.5 whitespace-nowrap" title={`Alerta de Pago enviado por Email el ${inv.emailAlertSentDate}`}>
+                              📧 Alerta Enviada
+                            </span>
+                          ) : (
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{inv.status}</p>
+                          )}
                         </div>
-                        <button 
-                          onClick={async () => {
-                            if (!user) return;
-                            const docRef = doc(db, 'invoices', inv.id);
-                            await updateDoc(docRef, { status: 'Pagado', updatedAt: serverTimestamp() });
-                          }}
-                          className="p-2 bg-white border border-slate-200 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-all shadow-sm"
-                          title="Marcar como pagado"
-                        >
-                          <CheckCircle2 size={16} />
-                        </button>
+                        <div className="flex gap-1.5">
+                          <button 
+                            onClick={() => openAlertModal(inv)}
+                            className="p-2 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-lg text-indigo-600 transition-all shadow-sm cursor-pointer flex items-center justify-center"
+                            title="Enviar Alerta de Pago a rescoing@gmail.com"
+                          >
+                            <Mail size={16} />
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              if (!user) return;
+                              const docRef = doc(db, 'invoices', inv.id);
+                              await updateDoc(docRef, { status: 'Pagado', updatedAt: serverTimestamp() });
+                            }}
+                            className="p-2 bg-white border border-slate-200 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-all shadow-sm cursor-pointer flex items-center justify-center"
+                            title="Marcar como pagado"
+                          >
+                            <CheckCircle2 size={16} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -962,6 +1108,110 @@ export default function FinanceView({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Web3Forms Payment Alert Modal */}
+      <Modal
+        isOpen={isAlertModalOpen}
+        onClose={() => !isSendingAlert && setIsAlertModalOpen(false)}
+        title="Enviar Alerta de Pago Automatizada"
+      >
+        <form onSubmit={handleSendPaymentAlert} className="space-y-4 font-sans text-left">
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60 flex items-center gap-3.5">
+            <div className="p-3 bg-indigo-50 text-indigo-700 rounded-xl">
+              <Mail size={22} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Servicio Integrado</p>
+              <h4 className="text-sm font-black text-slate-800">Web3Forms Mail Gateway</h4>
+            </div>
+            <div className="ml-auto bg-indigo-100 text-indigo-850 text-[10px] font-black uppercase px-2 py-0.5 rounded-full border border-indigo-200 tracking-wider">
+              En Línea
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Destinatario (Email del Sistema)</label>
+              <input 
+                type="text"
+                disabled
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-100 text-slate-500 font-bold text-xs focus:outline-none"
+                value="rescoing@gmail.com" 
+              />
+              <p className="text-[10px] text-slate-400 font-medium italic mt-1">Configurado por directiva para alertas de pago corporativas.</p>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Asunto del Correo</label>
+              <input 
+                type="text"
+                required
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                value={alertSubject} 
+                onChange={e => setAlertSubject(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Cuerpo del Mensaje (Editable)</label>
+              <textarea 
+                rows={11}
+                required
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none font-mono leading-relaxed"
+                value={alertMessage} 
+                onChange={e => setAlertMessage(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {alertSuccess === true && (
+            <div className="p-3 bg-emerald-50 text-emerald-805 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
+              <Check className="text-emerald-600 stroke-[3]" size={16} />
+              <span>¡Alerta de pago enviada a rescoing@gmail.com exitosamente!</span>
+            </div>
+          )}
+
+          {alertSuccess === false && (
+            <div className="p-3 bg-rose-50 text-rose-805 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-2">
+              <AlertTriangle className="text-rose-600" size={16} />
+              <span>Ocurrió un error al enviar el correo. Por favor, reintenta.</span>
+            </div>
+          )}
+
+          <div className="pt-2 flex justify-end gap-3">
+            <button
+              type="button"
+              disabled={isSendingAlert}
+              onClick={() => setIsAlertModalOpen(false)}
+              className="px-4 py-2 border border-slate-200 text-slate-500 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors uppercase tracking-wider cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSendingAlert || alertSuccess === true}
+              className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all uppercase tracking-wider cursor-pointer flex items-center gap-2"
+            >
+              {isSendingAlert ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Enviando...</span>
+                </>
+              ) : alertSuccess === true ? (
+                <>
+                  <Check className="stroke-[3]" size={14} />
+                  <span>Enviado</span>
+                </>
+              ) : (
+                <>
+                  <Send size={14} />
+                  <span>Enviar Alerta de Pago</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Invoice Modal */}
       <Modal 
