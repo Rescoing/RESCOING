@@ -33,7 +33,6 @@ const DOCUMENT_TYPES = [
   { id: 'quotation', label: 'Cotización', icon: FileText, prefix: 'COT' },
   { id: 'purchase_order', label: 'Orden de Compra', icon: ShoppingCart, prefix: 'OC' },
   { id: 'sales_note', label: 'Nota de Venta', icon: Ticket, prefix: 'NV' },
-  { id: 'invoice', label: 'Factura (SII)', icon: FileCheck, prefix: 'FAC' },
   { id: 'payment_status', label: 'Estado de Pago', icon: CheckCircle2, prefix: 'EP' },
 ];
 

@@ -25,7 +25,7 @@ import {
   Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Invoice, FinanceProcess, FinanceTask, PurchaseInvoice, Payroll } from '../types';
+import { Invoice, FinanceProcess, FinanceTask, PurchaseInvoice, Payroll, Document } from '../types';
 import Modal from './ui/Modal';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -42,6 +42,7 @@ export default function FinanceView({
 }: { autoOpen?: boolean; onModalHandled?: () => void }) {
   const { user } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
   const [processes, setProcesses] = useState<FinanceProcess[]>([]);
   const [tasks, setTasks] = useState<FinanceTask[]>([]);
   const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
@@ -184,12 +185,18 @@ Departamento de Cobranzas / ERP Rescoing`;
       setPayrolls(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payroll)));
     });
 
+    const qDocuments = query(collection(db, 'documents'), where('ownerId', '==', user.uid));
+    const unsubDocuments = onSnapshot(qDocuments, (snapshot) => {
+      setDocuments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Document)));
+    }, (error) => console.error("Finance documents error:", error));
+
     return () => {
       unsubInvoices();
       unsubProcesses();
       unsubTasks();
       unsubPurchase();
       unsubPayrolls();
+      unsubDocuments();
     };
   }, [user]);
 
@@ -214,7 +221,8 @@ Departamento de Cobranzas / ERP Rescoing`;
     totalAmount: 0,
     paymentMethod: 'Transferencia',
     date: new Date().toISOString().split('T')[0],
-    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    associatedDocIds: []
   });
 
   const [newProcess, setNewProcess] = useState<Partial<FinanceProcess>>({
@@ -240,11 +248,23 @@ Departamento de Cobranzas / ERP Rescoing`;
     if (!user) return;
 
     try {
-      await addDoc(collection(db, 'invoices'), {
+      const docRef = await addDoc(collection(db, 'invoices'), {
         ...newInvoice,
         ownerId: user.uid,
         createdAt: serverTimestamp()
       });
+
+      // Update associated documents as linked
+      if (newInvoice.associatedDocIds && newInvoice.associatedDocIds.length > 0) {
+        for (const docId of newInvoice.associatedDocIds) {
+          const documentRef = doc(db, 'documents', docId);
+          await updateDoc(documentRef, {
+            linkedInvoiceId: docRef.id,
+            status: 'sent' // update its status to reflect it's processed/sent
+          });
+        }
+      }
+
       setIsModalOpen(false);
       setNewInvoice({ 
         client: '', 
@@ -254,7 +274,8 @@ Departamento de Cobranzas / ERP Rescoing`;
         totalAmount: 0, 
         paymentMethod: 'Transferencia', 
         date: new Date().toISOString().split('T')[0],
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        associatedDocIds: []
       });
     } catch (error) {
       console.error(error);
@@ -682,7 +703,28 @@ Departamento de Cobranzas / ERP Rescoing`;
                     {filteredInvoices.map((inv) => (
                       <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors group">
                         <td className="px-6 py-4 font-mono font-medium text-slate-500">{inv.id}</td>
-                        <td className="px-6 py-4 font-bold text-slate-900">{inv.client}</td>
+                        <td className="px-6 py-4 font-bold text-slate-900">
+                          <div>{inv.client}</div>
+                          {inv.associatedDocIds && inv.associatedDocIds.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {inv.associatedDocIds.map(docId => {
+                                const foundDoc = documents.find(d => d.id === docId);
+                                if (!foundDoc) return null;
+                                const label = foundDoc.type === 'quotation' ? 'COT' :
+                                              foundDoc.type === 'purchase_order' ? 'OC' :
+                                              foundDoc.type === 'sales_note' ? 'NV' : 'EP';
+                                const dTheme = foundDoc.type === 'quotation' ? 'bg-blue-50 text-blue-700 border-blue-105/40' :
+                                               foundDoc.type === 'purchase_order' ? 'bg-amber-50 text-amber-700 border-amber-105/40' :
+                                               foundDoc.type === 'sales_note' ? 'bg-purple-50 text-purple-700 border-purple-105/40' : 'bg-emerald-50 text-emerald-700 border-emerald-105/40';
+                                return (
+                                  <span key={docId} className={`px-1 rounded text-[8px] font-black uppercase tracking-wider border ${dTheme}`} title={`${foundDoc.type}: ${foundDoc.folio}`}>
+                                    {label}: {foundDoc.folio}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-slate-500 font-medium">{inv.paymentMethod || '---'}</td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border
@@ -1221,6 +1263,84 @@ Departamento de Cobranzas / ERP Rescoing`;
       >
         <form onSubmit={handleSubmitInvoice} className="space-y-4 font-sans">
           <div className="space-y-4 text-left">
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 font-sans">Documentos Asociados a Vincular (OC, NV, EP, Cotización)</label>
+              <p className="text-[10px] text-slate-405 mb-2 leading-snug">Vincule uno o más documentos mercantiles para rellenar los datos de facturación automáticamente.</p>
+              <div className="max-h-[160px] overflow-y-auto space-y-1.5 pr-1 border border-slate-200 rounded-lg p-2 bg-slate-50">
+                {documents.filter(d => d.type !== 'invoice').length === 0 ? (
+                  <p className="text-slate-400 italic text-[11px] py-3 text-center">No hay otros documentos mercantiles registrados en el ERP</p>
+                ) : (
+                  documents.filter(d => d.type !== 'invoice').map(docItem => {
+                    const isChecked = newInvoice.associatedDocIds?.includes(docItem.id) || false;
+                    const docLabel = docItem.type === 'quotation' ? 'COT' :
+                                     docItem.type === 'purchase_order' ? 'OC' :
+                                     docItem.type === 'sales_note' ? 'NV' : 'EP';
+                    const docTheme = docItem.type === 'quotation' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                     docItem.type === 'purchase_order' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                     docItem.type === 'sales_note' ? 'bg-purple-50 text-purple-700 border-purple-100' : 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                    return (
+                      <button
+                        type="button"
+                        key={docItem.id} 
+                        onClick={() => {
+                          const currentIds = newInvoice.associatedDocIds || [];
+                          let newIds = [];
+                          if (isChecked) {
+                            newIds = currentIds.filter(id => id !== docItem.id);
+                          } else {
+                            newIds = [...currentIds, docItem.id];
+                          }
+                          
+                          // Auto completion logic
+                          const selectedDocs = documents.filter(d => newIds.includes(d.id));
+                          
+                          let fillClient = newInvoice.client || '';
+                          if (selectedDocs.length > 0) {
+                            fillClient = selectedDocs[0].clientName;
+                          }
+                          
+                          // Recalculate sum
+                          const totalNet = selectedDocs.reduce((sum, d) => sum + (d.netAmount || 0), 0);
+                          const totalIva = Math.round(totalNet * 0.19);
+                          const totalSum = totalNet + totalIva;
+
+                          setNewInvoice({
+                            ...newInvoice,
+                            associatedDocIds: newIds,
+                            client: fillClient,
+                            netAmount: totalNet,
+                            iva: totalIva,
+                            totalAmount: totalSum
+                          });
+                        }}
+                        className={`w-full flex items-center justify-between p-2 rounded-lg border text-left transition-all ${
+                          isChecked ? 'bg-indigo-50 border-indigo-250 text-indigo-900 shadow-sm' : 'bg-white border-slate-150 text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="checkbox" 
+                            checked={isChecked}
+                            readOnly
+                            className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                          />
+                          <div>
+                            <span className={`inline-block font-black font-mono text-[9px] uppercase px-1.5 py-0.5 rounded border ${docTheme} mr-2`}>
+                              {docLabel}
+                            </span>
+                            <span className="font-bold text-slate-800 font-mono text-xs">{docItem.folio}</span>
+                            <span className="text-[10px] text-slate-500 block mt-0.5 font-medium">{docItem.clientName}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold font-mono text-xs text-slate-700">${docItem.totalAmount?.toLocaleString()}</span>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Cliente Corporativo</label>
               <input 

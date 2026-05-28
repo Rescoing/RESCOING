@@ -80,6 +80,7 @@ export interface Invoice {
   paymentMethod?: 'Transferencia' | 'Efectivo' | 'Tarjeta' | 'Cheque';
   emailAlertSent?: boolean;
   emailAlertSentDate?: string;
+  associatedDocIds?: string[];
 }
 
 export interface DocumentItem {
