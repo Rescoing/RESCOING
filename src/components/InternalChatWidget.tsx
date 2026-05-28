@@ -120,7 +120,7 @@ export default function InternalChatWidget() {
 
   // 1. Fetch system users
   useEffect(() => {
-    if (!user || (profile?.accessStatus !== 'approved' && profile?.role !== 'admin')) return;
+    if (!user) return;
 
     const q = query(
       collection(db, 'users')
@@ -132,7 +132,7 @@ export default function InternalChatWidget() {
           id: doc.id,
           ...doc.data()
         }))
-        .filter((u: any) => u.uid !== user.uid && u.accessStatus === 'approved');
+        .filter((u: any) => u.uid !== user.uid && !u.id.startsWith('invite_'));
       
       // Sort in memory by displayName or email safely
       activeUsers.sort((a: any, b: any) => {
@@ -147,11 +147,11 @@ export default function InternalChatWidget() {
     });
 
     return () => unsubscribe();
-  }, [user, profile?.accessStatus]);
+  }, [user]);
 
   // 2. Fetch both Direct messages AND Channel messages real-time
   useEffect(() => {
-    if (!user || (profile?.accessStatus !== 'approved' && profile?.role !== 'admin')) return;
+    if (!user) return;
 
     const directSentQuery = query(collection(db, 'internal_messages'), where('senderId', '==', user.uid), where('isGroup', '==', false));
     const directRecvQuery = query(collection(db, 'internal_messages'), where('receiverId', '==', user.uid), where('isGroup', '==', false));

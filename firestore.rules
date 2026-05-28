@@ -49,8 +49,8 @@ service cloud.firestore {
 
     // --- User Profiles & Company Settings ---
     match /users/{userId} {
-      allow list: if isApproved();
-      allow get: if isOwner(userId) || isAdmin() || userId == 'invite_' + request.auth.token.email;
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
       allow delete: if isAdmin() || userId == 'invite_' + request.auth.token.email;
       allow create: if (
         (isOwner(userId) 
@@ -58,7 +58,7 @@ service cloud.firestore {
           && incoming().email == request.auth.token.email
           && (
             request.auth.token.email == 'rescoing@gmail.com' ||
-            exists(/databases/$(database)/documents/users/invite_ + request.auth.token.email) ||
+            exists(/databases/$(database)/documents/users/$('invite_' + request.auth.token.email)) ||
             (incoming().role == 'user' && incoming().accessStatus == 'pending')
           )
         ) || isAdmin()
@@ -82,8 +82,8 @@ service cloud.firestore {
     }
 
     match /internal_messages/{messageId} {
-      allow create: if isApproved() && (incoming().senderId == request.auth.uid || isAdmin());
-      allow read, list, update, delete: if isApproved() && (
+      allow create: if isSignedIn() && (incoming().senderId == request.auth.uid || isAdmin());
+      allow read, list, update, delete: if isSignedIn() && (
         resource.data.senderId == request.auth.uid || 
         resource.data.receiverId == request.auth.uid || 
         resource.data.isGroup == true || 
