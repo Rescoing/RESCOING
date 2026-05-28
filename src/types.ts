@@ -46,6 +46,8 @@ export interface ProjectDocument {
   type: string;
   uploadDate: string;
   size: string;
+  fileData?: string;
+  fileType?: string;
 }
 
 export interface Project {

@@ -17,8 +17,11 @@ import {
   Link as LinkIcon,
   Trash2,
   Edit2,
-  Save
+  Save,
+  Eye,
+  Printer
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { motion } from 'motion/react';
 import { Document, Contact } from '../types';
 import Modal from './ui/Modal';
@@ -43,6 +46,7 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [rutLookup, setRutLookup] = useState('');
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
+  const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -249,6 +253,125 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
     setIsModalOpen(true);
   };
 
+  const handleDownloadPDF = (docItem: Document) => {
+    try {
+      const pdf = new jsPDF();
+      
+      // Header & Primary Color Brand Accent
+      pdf.setFillColor(30, 41, 59); // slate-800
+      pdf.rect(0, 0, 210, 40, 'F');
+      
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(22);
+      pdf.setFont("helvetica", "bold");
+      const labelUpper = docItem.type === 'quotation' ? 'COTIZACIÓN DE INGENIERÍA' :
+                         docItem.type === 'purchase_order' ? 'ORDEN DE COMPRA' :
+                         docItem.type === 'sales_note' ? 'NOTA DE VENTA' :
+                         docItem.type === 'invoice' ? 'FACTURA ELECTRÓNICA' : 'ESTADO DE PAGO';
+      pdf.text(labelUpper, 15, 25);
+      
+      // Right Box (Rut Identification Area)
+      pdf.setFillColor(248, 250, 252); // slate-50
+      pdf.setDrawColor(203, 213, 225); // slate-300
+      pdf.rect(140, 8, 62, 24, 'FD');
+      pdf.setTextColor(15, 23, 42); // slate-900
+      pdf.setFontSize(10);
+      pdf.text("R.U.T.: 76.543.210-K", 143, 14);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(`FOLIO: ${docItem.folio}`, 143, 22);
+      if (docItem.siiFolio) {
+        pdf.setFontSize(8);
+        pdf.text(`SII FOLIO: ${docItem.siiFolio}`, 143, 28);
+      }
+      
+      // Client Details
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("DATOS DEL CLIENTE / RECEPTOR", 15, 50);
+      pdf.setLineWidth(0.5);
+      pdf.setDrawColor(15, 23, 42);
+      pdf.line(15, 52, 195, 52);
+      
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(10);
+      pdf.text(`Cliente: ${docItem.clientName}`, 15, 58);
+      pdf.text(`ID Cliente: ${docItem.clientId}`, 15, 64);
+      pdf.text(`Fecha Emisión: ${docItem.date}`, 15, 70);
+      if (docItem.paymentMethod) {
+        pdf.text(`Forma de Pago: ${docItem.paymentMethod.toUpperCase()}`, 15, 76);
+      }
+      
+      // Items Table
+      pdf.setFont("helvetica", "bold");
+      pdf.text("DETALLES DEL DOCUMENTO", 15, 90);
+      pdf.line(15, 92, 195, 92);
+      
+      // Table Header Row
+      pdf.setFillColor(241, 245, 249); // slate-100
+      pdf.rect(15, 95, 180, 8, 'F');
+      pdf.setFontSize(9);
+      pdf.text("DESCRIPCIÓN", 18, 100);
+      pdf.text("CANT", 130, 100);
+      pdf.text("P. UNITARIO", 150, 100);
+      pdf.text("TOTAL", 178, 100);
+      
+      let currentY = 109;
+      pdf.setFont("helvetica", "normal");
+      
+      docItem.items.forEach((item) => {
+        // Prevent overflow
+        if (currentY > 260) {
+          pdf.addPage();
+          currentY = 20;
+        }
+        pdf.text(item.description, 18, currentY);
+        pdf.text(String(item.quantity), 132, currentY);
+        pdf.text(`$${item.price.toLocaleString()}`, 150, currentY);
+        pdf.text(`$${item.total.toLocaleString()}`, 178, currentY);
+        currentY += 8;
+      });
+      
+      // Draw totals line
+      pdf.line(15, currentY, 195, currentY);
+      currentY += 8;
+      
+      // Calculations Box
+      pdf.setFontSize(10);
+      pdf.text("Neto afecto:", 135, currentY);
+      pdf.text(`$${docItem.netAmount?.toLocaleString()}`, 175, currentY);
+      currentY += 6;
+      pdf.text("I.V.A. (19%):", 135, currentY);
+      pdf.text(`$${docItem.iva?.toLocaleString()}`, 175, currentY);
+      currentY += 6;
+      pdf.setFont("helvetica", "bold");
+      pdf.text("TOTAL GENERAL:", 135, currentY);
+      pdf.text(`$${docItem.totalAmount?.toLocaleString()}`, 175, currentY);
+      
+      // Footer text or Signature Area
+      currentY += 20;
+      if (currentY > 260) {
+        pdf.addPage();
+        currentY = 30;
+      }
+      pdf.setDrawColor(226, 232, 240); // slate-200
+      pdf.setLineWidth(0.2);
+      pdf.line(20, currentY + 15, 80, currentY + 15);
+      pdf.line(125, currentY + 15, 185, currentY + 15);
+      
+      pdf.setFontSize(8);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(148, 163, 184); // slate-400
+      pdf.text("Firma Responsable Emitente", 35, currentY + 20);
+      pdf.text("Firma Cliente / Receptor", 145, currentY + 20);
+      
+      pdf.save(`${docItem.type}_${docItem.folio}.pdf`);
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo generar el archivo de impresión.");
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (window.confirm('¿Está seguro de eliminar este documento? Esta acción es irreversible.')) {
       try {
@@ -363,9 +486,20 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
                        >
                         <Edit2 size={16} />
                       </button>
-                       <button className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-400 hover:text-slate-600" title="Descargar PDF">
-                        <Download size={16} />
-                      </button>
+                       <button 
+                         onClick={() => setViewingDoc(doc)}
+                         className="p-1 bg-slate-50 hover:bg-indigo-50 rounded text-indigo-600 transition-colors" 
+                         title="Ver Online"
+                       >
+                         <Eye size={16} />
+                       </button>
+                       <button 
+                         onClick={() => handleDownloadPDF(doc)}
+                         className="p-1 bg-slate-50 hover:bg-slate-150 rounded text-slate-500 transition-colors" 
+                         title="Descargar PDF"
+                       >
+                         <Download size={16} />
+                       </button>
                       <button 
                         onClick={() => handleDelete(doc.id)}
                         className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-400 hover:text-rose-500" 
@@ -670,6 +804,164 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
             {editingDoc ? 'Actualizar Documento' : 'Confirmar Registro de Documento'}
           </button>
         </form>
+      </Modal>
+
+      {/* Visualización Documental Online */}
+      <Modal
+        isOpen={!!viewingDoc}
+        onClose={() => setViewingDoc(null)}
+        title={`Visualizador de Documentos Oficiales: ${viewingDoc?.folio}`}
+      >
+        <div className="space-y-6 font-sans text-left">
+          {viewingDoc && (
+            <>
+              {/* Actions Header Bar */}
+              <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-200 shadow-sm shrink-0">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Visualización Fiscal Online</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => window.print()}
+                    className="flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold transition-all"
+                  >
+                    <Printer size={14} className="text-slate-550" />
+                    <span>Imprimir</span>
+                  </button>
+                  <button
+                    onClick={() => handleDownloadPDF(viewingDoc)}
+                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-3 py-1.5 text-xs font-bold transition-all shadow-sm"
+                  >
+                    <Download size={14} />
+                    <span>Descargar PDF</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Fiscal Document Sheet Ledger */}
+              <div className="bg-white border border-slate-300 rounded-2xl shadow-xl p-6 md:p-8 max-w-full overflow-x-auto print:border-none print:shadow-none font-sans custom-scrollbar">
+                <div className="min-w-[600px] space-y-8">
+                  {/* Ledger Header */}
+                  <div className="flex justify-between">
+                    <div>
+                      <h3 className="text-base font-black text-slate-900 leading-tight">RESCOING INGENIERÍA LTDA</h3>
+                      <p className="text-[10px] text-slate-500 font-medium mt-1 uppercase tracking-wider">Servicios Integrales de Ingeniería • Obras Civiles • Electricidad</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">contacto@rescoing.cl • Santiago, Chile</p>
+                    </div>
+
+                    {/* Standard Red Border Box (SII Chile style) */}
+                    <div className="border-[3px] border-rose-600 px-6 py-4 text-center rounded-lg bg-rose-50/20 max-w-[240px] shrink-0">
+                      <p className="text-xs font-black text-rose-600 tracking-wider">R.U.T.: 76.543.210-K</p>
+                      <h4 className="text-xs font-black text-rose-700 uppercase my-1 leading-snug">
+                        {viewingDoc.type === 'quotation' ? 'COTIZACIÓN' :
+                         viewingDoc.type === 'purchase_order' ? 'ORDEN DE COMPRA' :
+                         viewingDoc.type === 'sales_note' ? 'NOTA DE VENTA' :
+                         viewingDoc.type === 'invoice' ? 'FACTURA ELECTRÓNICA' : 'ESTADO DE PAGO'}
+                      </h4>
+                      <p className="text-sm font-black text-rose-600 font-mono tracking-widest">{viewingDoc.folio}</p>
+                      {viewingDoc.siiFolio && (
+                        <p className="text-[9px] text-rose-500 font-bold mt-1 uppercase">SII Folio Ref: {viewingDoc.siiFolio}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Client Metadata block */}
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 border border-slate-100 rounded-xl text-xs">
+                    <div className="space-y-1.5">
+                      <div>
+                        <span className="text-slate-400 font-semibold block uppercase text-[9px] tracking-wider leading-none">Señor(es):</span>
+                        <span className="text-slate-850 font-bold text-sm leading-relaxed">{viewingDoc.clientName}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 font-semibold block uppercase text-[9px] tracking-wider leading-none">R.U.T. / ID Cliente:</span>
+                        <span className="text-slate-700 font-mono font-bold">{viewingDoc.clientId}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1.5 pl-6 border-l border-slate-200">
+                      <div>
+                        <span className="text-slate-400 font-semibold block uppercase text-[9px] tracking-wider leading-none">Fecha de Emisión:</span>
+                        <span className="text-slate-700 font-bold">{viewingDoc.date}</span>
+                      </div>
+                      {viewingDoc.paymentMethod && (
+                        <div>
+                          <span className="text-slate-400 font-semibold block uppercase text-[9px] tracking-wider leading-none">Forma de Pago:</span>
+                          <span className="text-indigo-600 font-bold uppercase">{viewingDoc.paymentMethod}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Items list Table */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                          <th className="p-2.5 px-4 text-left">Descripción del Item</th>
+                          <th className="p-2.5 text-center w-20">Cantidad</th>
+                          <th className="p-2.5 text-right w-36">Precio Unitario</th>
+                          <th className="p-2.5 px-4 text-right w-36">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                        {viewingDoc.items.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="p-3 px-4 text-left font-bold text-slate-900 leading-tight block truncate max-w-[280px]" title={item.description}>
+                              {item.description}
+                            </td>
+                            <td className="p-3 text-center font-mono font-bold text-slate-500">
+                              {item.quantity}
+                            </td>
+                            <td className="p-3 text-right font-mono text-slate-600">
+                              ${item.price.toLocaleString()}
+                            </td>
+                            <td className="p-3 px-4 text-right font-mono font-bold text-slate-900">
+                              ${item.total.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Bottom Totals Summary */}
+                  <div className="flex justify-between items-start pt-2">
+                    <div className="text-[10px] text-slate-400 max-w-sm mt-1 leading-relaxed border-t border-slate-100 pt-2 font-medium">
+                      * El presente documento representa un registro administrativo emitido por el sistema centralizado de control corporativo de RESCOING LTDA.
+                    </div>
+                    
+                    <div className="divider w-56 shrink-0 text-xs font-semibold text-slate-600 space-y-1.5 border-t border-slate-100 pt-2">
+                      <div className="flex justify-between">
+                        <span>Neto Afecto:</span>
+                        <span className="font-mono">${viewingDoc.netAmount?.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>I.V.A. (19%):</span>
+                        <span className="font-mono">${viewingDoc.iva?.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-base font-black text-slate-900 border-t border-slate-200 pt-1.5">
+                        <span>TOTAL GENERAL:</span>
+                        <span className="font-mono text-primary">${viewingDoc.totalAmount?.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Legal stamps & signatures area */}
+                  <div className="pt-12 grid grid-cols-2 gap-12 text-center text-[10px] text-slate-400 font-medium">
+                    <div className="space-y-1">
+                      <div className="border-t border-slate-200 mx-auto w-40 mt-8" />
+                      <p className="font-bold">Firma de Finanzas</p>
+                      <p className="text-[8px] uppercase">Emitente Autorizado</p>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="border-t border-slate-200 mx-auto w-40 mt-8" />
+                      <p className="font-bold">Aceptado / Conforme</p>
+                      <p className="text-[8px] uppercase">Firma del Cliente Receptor</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );

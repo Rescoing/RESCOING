@@ -1,11 +1,12 @@
 import { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
-import { Clock, CheckCircle2, AlertCircle, Plus, Edit2, Trash2, ListChecks, FileText, ShieldAlert, ChevronRight, Save, Flame, HelpCircle, Upload, File, MoreVertical } from 'lucide-react';
+import { Clock, CheckCircle2, AlertCircle, Plus, Edit2, Trash2, ListChecks, FileText, ShieldAlert, ChevronRight, Save, Flame, HelpCircle, Upload, File, MoreVertical, Download, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Project, ProjectTask, RiskPreventionRecord, ProjectDocument, Contact } from '../types';
 import Modal from './ui/Modal';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
+import { DocumentPreviewViewer } from './DocumentPreviewSystem';
 
 interface OperationsViewProps {
   autoOpen?: boolean;
@@ -24,6 +25,7 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [previewItem, setPreviewItem] = useState<any | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -207,21 +209,50 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
     setNewRisk({ type: 'talk', description: '', date: new Date().toISOString().split('T')[0] });
   };
 
+  const getFallbackMime = (ext: string): string => {
+    if (['png', 'jpg', 'jpeg', 'gif', 'svg'].includes(ext)) return 'image/' + ext;
+    if (['xlsx', 'xls'].includes(ext)) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (ext === 'csv') return 'text/csv';
+    if (ext === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (ext === 'doc') return 'application/msword';
+    if (ext === 'pdf') return 'application/pdf';
+    return 'text/plain';
+  };
+
+  const handleDownload = (docItem: any) => {
+    if (!docItem.fileData) return;
+    const link = document.createElement('a');
+    link.href = docItem.fileData;
+    link.download = docItem.name || docItem.fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedProjectId) return;
 
-    const newDoc: ProjectDocument = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: file.name,
-      type: file.name.split('.').pop() || 'file',
-      uploadDate: new Date().toLocaleDateString(),
-      size: (file.size / (1024 * 1024)).toFixed(2) + ' MB'
-    };
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64Data = event.target?.result as string;
+      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'file';
+      
+      const newDoc: ProjectDocument = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: file.name,
+        type: fileExt,
+        uploadDate: new Date().toLocaleDateString(),
+        size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+        fileData: base64Data,
+        fileType: file.type || getFallbackMime(fileExt)
+      };
 
-    const projectRef = doc(db, 'projects', selectedProjectId);
-    const updatedDocs = [...(selectedProject?.documents || []), newDoc];
-    await updateDoc(projectRef, { documents: updatedDocs });
+      const projectRef = doc(db, 'projects', selectedProjectId);
+      const updatedDocs = [...(selectedProject?.documents || []), newDoc];
+      await updateDoc(projectRef, { documents: updatedDocs });
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -537,25 +568,80 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
                 <p className="text-sm">Sin documentos cargados.</p>
               </div>
             )}
-            {selectedProject?.documents?.map(doc => (
-              <div key={doc.id} className="p-3 bg-white border border-slate-100 rounded-lg flex items-center justify-between hover:border-slate-200 transition-colors shadow-sm">
+            {selectedProject?.documents?.map(docItem => (
+              <div key={docItem.id} className="p-3 bg-white border border-slate-100 rounded-lg flex items-center justify-between hover:border-slate-200 transition-colors shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 bg-slate-50 rounded-lg flex items-center justify-center text-slate-400">
-                    <File size={18} />
+                  <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center font-bold text-[10px] uppercase shrink-0 border border-indigo-150">
+                    {docItem.type.substring(0, 3)}
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-900 leading-none">{doc.name}</p>
-                    <p className="text-[10px] text-slate-400 mt-1 capitalize font-bold uppercase tracking-widest">{doc.type} • {doc.size}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900 leading-none truncate max-w-[200px]">{docItem.name}</p>
+                    <p className="text-[10px] text-slate-450 mt-1 capitalize font-medium">{docItem.type} • {docItem.size}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono font-bold text-slate-300">{doc.uploadDate}</span>
-                  <button className="p-1 hover:bg-slate-50 rounded text-slate-400">
-                    <MoreVertical size={16} />
-                  </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] font-mono font-bold text-slate-350">{docItem.uploadDate}</span>
+                  {docItem.fileData && (
+                    <button 
+                      onClick={() => setPreviewItem({
+                        id: docItem.id,
+                        name: docItem.name,
+                        fileName: docItem.name,
+                        fileType: docItem.fileType || docItem.type,
+                        fileData: docItem.fileData
+                      })}
+                      className="p-1.5 hover:bg-slate-50 rounded-lg text-indigo-600 transition-colors" 
+                      title="Ver Online"
+                    >
+                      <Eye size={15} />
+                    </button>
+                  )}
+                  {docItem.fileData && (
+                    <button 
+                      onClick={() => handleDownload(docItem)}
+                      className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-500 hover:text-slate-800 transition-colors" 
+                      title="Descargar"
+                    >
+                      <Download size={15} />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Document Preview Modal */}
+      <Modal
+        isOpen={!!previewItem}
+        onClose={() => setPreviewItem(null)}
+        title={`Visualización Online: ${previewItem?.name}`}
+      >
+        <div className="space-y-4 font-sans text-left">
+          {previewItem && (
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 px-3 rounded-xl border border-slate-200 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs uppercase shrink-0 border border-indigo-150">
+                  {previewItem.fileName.split('.').pop()?.substring(0, 3)}
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-xs font-black text-slate-950 truncate max-w-sm">{previewItem.name}</h4>
+                  <p className="text-[9px] text-indigo-600 font-bold uppercase tracking-wider">Antigravity Render Engine</p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleDownload(previewItem)}
+                className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all shrink-0 shadow-sm"
+              >
+                <Download size={13} />
+                <span>Descargar</span>
+              </button>
+            </div>
+          )}
+
+          <div className="bg-slate-100 rounded-2xl min-h-[400px] flex items-center justify-center overflow-hidden p-3 border border-slate-205 relative">
+            <DocumentPreviewViewer item={previewItem} />
           </div>
         </div>
       </Modal>
