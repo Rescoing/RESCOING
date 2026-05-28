@@ -3,7 +3,7 @@ import {
   FileText, Upload, Download, Eye, Trash2, Search, 
   Filter, Plus, File, Image as ImageIcon, FileCode,
   AlertCircle, CheckSquare, Square, Folder, FolderPlus, 
-  ChevronRight, ArrowRight, CornerDownRight, HelpCircle, 
+  ChevronRight, ChevronDown, ArrowRight, CornerDownRight, HelpCircle, 
   CloudLightning, RotateCw, ZoomIn, ZoomOut, Check, Info, FolderOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -64,6 +64,12 @@ export default function LibraryView() {
   // Folder navigation state
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState('');
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [folderSearchTerm, setFolderSearchTerm] = useState('');
+  
+  const toggleExpand = (id: string) => {
+    setExpandedFolders(prev => ({ ...prev, [id]: !prev[id] }));
+  };
   
   // Move item variables
   const [itemToMove, setItemToMove] = useState<LibraryItem | null>(null);
@@ -397,19 +403,32 @@ export default function LibraryView() {
     );
   };
 
+  const allFolders = items.filter(item => item.isFolder);
+  const rootFolders = allFolders.filter(item => item.folderId === null);
+
+  const filteredRootFolders = rootFolders.filter(f => {
+    if (!folderSearchTerm) return true;
+    const matchesSelf = f.name.toLowerCase().includes(folderSearchTerm.toLowerCase());
+    const hasMatchingDescendant = (folderId: string): boolean => {
+      const children = allFolders.filter(c => c.folderId === folderId);
+      return children.some(c => c.name.toLowerCase().includes(folderSearchTerm.toLowerCase()) || hasMatchingDescendant(c.id));
+    };
+    return matchesSelf || hasMatchingDescendant(f.id);
+  });
+
   return (
     <div className="space-y-6">
       {/* Upper header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">Biblioteca Corporativa</h2>
-          <p className="text-sm font-medium text-slate-500">Gestión de carpetas, planos, contratos y lectura de planillas online sin descargas</p>
+          <p className="text-sm font-medium text-slate-500">Gestión de carpetas jerárquicas, contratos, planos y lectura de planillas online</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Cloud Connection Button */}
           <button
             onClick={() => setIsCloudModalOpen(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-blue-700 px-4 py-2 rounded-xl hover:from-blue-100 hover:to-indigo-100 transition-all font-bold shadow-sm"
+            className="flex items-center gap-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-blue-700 px-4 py-2 rounded-xl hover:from-blue-100 hover:to-indigo-100 transition-all font-bold shadow-sm cursor-pointer"
           >
             <CloudLightning size={18} />
             <span>Enlazar Drive / OneDrive</span>
@@ -418,7 +437,7 @@ export default function LibraryView() {
           {selectedIds.length > 0 && (
             <button
               onClick={handleBulkDelete}
-              className="flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-2 rounded-xl hover:bg-rose-100 transition-all font-bold border border-rose-200 shadow-sm"
+              className="flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-2 rounded-xl hover:bg-rose-100 transition-all font-bold border border-rose-200 shadow-sm cursor-pointer"
             >
               <Trash2 size={18} />
               <span>Eliminar Selección ({selectedIds.length})</span>
@@ -427,7 +446,7 @@ export default function LibraryView() {
 
           <button
             onClick={() => setIsFolderModalOpen(true)}
-            className="flex items-center gap-2 bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-xl hover:bg-slate-50 transition-all font-bold shadow-sm"
+            className="flex items-center gap-2 bg-white text-slate-700 border border-slate-200 px-3.5 py-2 rounded-xl hover:bg-slate-50 transition-all font-bold shadow-sm cursor-pointer hover:border-amber-400"
           >
             <FolderPlus size={18} className="text-amber-500" />
             <span>Nueva Carpeta</span>
@@ -438,7 +457,7 @@ export default function LibraryView() {
               setUploadQueue([]);
               setIsModalOpen(true);
             }}
-            className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl hover:bg-primary/95 transition-all font-bold shadow-md shadow-primary/10"
+            className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl hover:bg-primary/95 transition-all font-bold shadow-md shadow-primary/10 cursor-pointer"
           >
             <Upload size={18} />
             <span>Subir Archivo</span>
@@ -450,9 +469,9 @@ export default function LibraryView() {
       <div className="bg-slate-100/80 p-3.5 rounded-xl border border-slate-200 flex flex-wrap items-center gap-1 text-xs">
         <button 
           onClick={() => { setCurrentFolderId(null); setSearchTerm(''); }}
-          className="flex items-center gap-1.5 text-slate-500 hover:text-primary transition-colors font-bold"
+          className="flex items-center gap-1.5 text-slate-500 hover:text-primary transition-colors font-bold cursor-pointer"
         >
-          <FolderOpen size={16} className="text-slate-400" />
+          <FolderOpen size={16} className="text-slate-400 shrink-0" />
           <span>Biblioteca Raíz</span>
         </button>
         
@@ -461,7 +480,7 @@ export default function LibraryView() {
             <ChevronRight size={14} className="text-slate-400 mx-1 shrink-0" />
             <button
               onClick={() => { setCurrentFolderId(crumb.id); setSearchTerm(''); }}
-              className={`hover:text-primary transition-colors font-bold ${index === breadcrumbs.length - 1 ? 'text-slate-900' : 'text-slate-500'}`}
+              className={`hover:text-primary transition-colors font-bold cursor-pointer ${index === breadcrumbs.length - 1 ? 'text-slate-900 border-b border-slate-300 pb-0.5' : 'text-slate-500'}`}
             >
               {crumb.name}
             </button>
@@ -471,192 +490,258 @@ export default function LibraryView() {
         {searchTerm && (
           <>
             <ChevronRight size={14} className="text-slate-400 mx-1 shrink-0" />
-            <span className="text-primary font-bold">Búsqueda: "{searchTerm}"</span>
+            <span className="text-primary font-bold bg-primary/10 px-2 py-0.5 rounded-lg">Búsqueda: "{searchTerm}"</span>
           </>
         )}
       </div>
 
-      {/* Filters & Search */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-150 flex flex-col md:flex-row items-center gap-4">
-        <div className="flex items-center gap-2 px-1 shrink-0">
-          <button 
-            onClick={toggleSelectAll}
-            className="p-1 hover:bg-slate-100 rounded-lg transition-colors text-slate-500"
-            title="Seleccionar todo en este nivel"
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left pane: Tree view */}
+        <div className="lg:col-span-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-150 space-y-4">
+          <div className="flex items-center justify-between border-b pb-2">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+              <Folder size={14} className="text-slate-400" />
+              <span>Jerarquía de Carpetas</span>
+            </h3>
+          </div>
+          
+          <button
+            onClick={() => setIsFolderModalOpen(true)}
+            className="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-100 py-2.5 px-3 rounded-xl transition-all text-xs font-bold shadow-sm cursor-pointer"
           >
-            {selectedIds.length > 0 && selectedIds.length === displayedFilesAndFolders.length ? (
-              <CheckSquare size={20} className="text-primary" />
-            ) : (
-              <Square size={20} />
-            )}
+            <FolderPlus size={15} className="text-amber-500" />
+            <span>Nueva subcarpeta aquí</span>
           </button>
-        </div>
-        
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input
-            type="text"
-            placeholder="Buscar documentos o archivos en este nivel..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-11 pr-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-all text-sm block"
-          />
-        </div>
-        
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <Filter className="text-slate-400 shrink-0" size={18} />
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className="w-full md:w-auto border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all outline-none"
-          >
-            <option value="All">Todos los Documentos</option>
-            {DOCUMENT_TYPES.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+          
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+            <input 
+              type="text"
+              placeholder="Filtrar carpetas..."
+              value={folderSearchTerm}
+              onChange={(e) => setFolderSearchTerm(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all outline-none"
+            />
+          </div>
 
-      {/* Elements Grid (Folders and Files combined) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        <AnimatePresence>
-          {displayedFilesAndFolders.map((item) => (
-            <motion.div
-              key={item.id}
-              layout
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className={`bg-white rounded-2xl border transition-all overflow-hidden flex flex-col ${selectedIds.includes(item.id) ? 'border-primary ring-2 ring-primary/10' : 'border-slate-150 shadow-sm hover:shadow-md'}`}
+          <div className="space-y-1.5 max-h-[420px] overflow-y-auto pt-1">
+            <div 
+              onClick={() => { setCurrentFolderId(null); setSearchTerm(''); }}
+              className={`flex items-center gap-2 py-2 px-3 rounded-xl text-xs font-black cursor-pointer transition-all ${currentFolderId === null ? 'bg-primary/10 text-primary' : 'text-slate-800 hover:bg-slate-50'}`}
             >
-              {/* Card visual stage */}
-              <div className="h-32 bg-slate-50 flex items-center justify-center border-b border-slate-100 relative group">
-                <button 
-                  onClick={() => toggleSelect(item.id)}
-                  className="absolute top-3 left-3 z-10 p-1.5 bg-white rounded-lg border border-slate-100 shadow-sm"
-                >
-                  {selectedIds.includes(item.id) ? (
-                    <CheckSquare size={16} className="text-primary" />
-                  ) : (
-                    <Square size={16} className="text-slate-400" />
-                  )}
-                </button>
-                
-                {item.isFolder ? (
-                  <div className="flex flex-col items-center justify-center gap-2 mt-4">
-                    <Folder size={48} className="text-amber-400 fill-amber-200/80 group-hover:scale-110 transition-transform" />
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Carpeta</span>
-                  </div>
-                ) : item.fileType.includes('image') ? (
-                  <img 
-                    src={item.fileData} 
-                    alt={item.name} 
-                    className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity"
-                    referrerPolicy="no-referrer"
-                  />
+              <FolderOpen size={16} className={currentFolderId === null ? 'text-primary' : 'text-slate-400'} />
+              <span>Biblioteca Raíz (/)</span>
+              <span className="ml-auto bg-slate-100 text-slate-550 rounded-full px-2 py-0.5 text-[9px] font-mono font-bold">
+                {items.filter(i => i.folderId === null).length}
+              </span>
+            </div>
+
+            <div className="mt-2 border-l border-slate-100 pl-1 ml-2.5 space-y-1">
+              {filteredRootFolders.map(folder => (
+                <FolderTreeNode
+                  key={folder.id}
+                  folder={folder}
+                  depth={0}
+                  allFolders={allFolders}
+                  currentFolderId={currentFolderId}
+                  setCurrentFolderId={(id: string | null) => { setCurrentFolderId(id); setSearchTerm(''); }}
+                  expandedFolders={expandedFolders}
+                  toggleExpand={toggleExpand}
+                  items={items}
+                />
+              ))}
+              {allFolders.length > 0 && filteredRootFolders.length === 0 && folderSearchTerm && (
+                <p className="text-[10px] text-slate-400 italic text-center py-4">Ningún directorio coincide</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right pane: Filters & Files Grid */}
+        <div className="lg:col-span-9 space-y-6">
+          {/* Filters & Search */}
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-150 flex flex-col md:flex-row items-center gap-4">
+            <div className="flex items-center gap-2 px-1 shrink-0">
+              <button 
+                onClick={toggleSelectAll}
+                className="p-1 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="Seleccionar todo en este nivel"
+              >
+                {selectedIds.length > 0 && selectedIds.length === displayedFilesAndFolders.length ? (
+                  <CheckSquare size={20} className="text-primary" />
                 ) : (
-                  <div className="text-slate-400 flex flex-col items-center justify-center gap-1.5 mt-4">
-                    {getFileIcon(item.fileType, item.fileName)}
-                    <span className="text-[10px] uppercase font-black tracking-wider text-slate-400">
-                      {item.fileName.split('.').pop()}
-                    </span>
-                  </div>
+                  <Square size={20} />
                 )}
-                
-                {/* Visual quick overlays */}
-                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2.5 z-20">
-                  {item.isFolder ? (
+              </button>
+            </div>
+            
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="text"
+                placeholder="Buscar documentos o archivos en este nivel..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-11 pr-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-all text-sm block"
+              />
+            </div>
+            
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <Filter className="text-slate-400 shrink-0" size={18} />
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="w-full md:w-auto border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all outline-none"
+              >
+                <option value="All">Todos los Documentos</option>
+                {DOCUMENT_TYPES.map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Elements Grid (Folders and Files combined) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <AnimatePresence>
+              {displayedFilesAndFolders.map((item) => (
+                <motion.div
+                  key={item.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className={`bg-white rounded-2xl border transition-all overflow-hidden flex flex-col ${selectedIds.includes(item.id) ? 'border-primary ring-2 ring-primary/10' : 'border-slate-150 shadow-sm hover:shadow-md'}`}
+                >
+                  {/* Card visual stage */}
+                  <div className="h-32 bg-slate-50 flex items-center justify-center border-b border-slate-100 relative group">
                     <button 
-                      onClick={() => setCurrentFolderId(item.id)}
-                      className="p-2.5 bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-lg font-bold text-xs flex items-center gap-1.5 text-slate-800"
+                      onClick={() => toggleSelect(item.id)}
+                      className="absolute top-3 left-3 z-10 p-1.5 bg-white rounded-lg border border-slate-100 shadow-sm cursor-pointer"
                     >
-                      <FolderOpen size={16} className="text-amber-500" />
-                      <span>Abrir</span>
+                      {selectedIds.includes(item.id) ? (
+                        <CheckSquare size={16} className="text-primary" />
+                      ) : (
+                        <Square size={16} className="text-slate-400" />
+                      )}
                     </button>
-                  ) : (
-                    <>
-                      <button 
-                        onClick={() => setPreviewItem(item)}
-                        className="p-2.5 bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-lg font-bold text-xs flex items-center gap-1.5 text-slate-800"
-                      >
-                        <Eye size={16} className="text-slate-600" />
-                        <span>Ver Online</span>
-                      </button>
-                      
-                      <button 
-                        onClick={() => handleDownload(item)}
-                        className="p-2.5 bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-lg text-slate-800"
-                        title="Descargar"
-                      >
-                        <Download size={16} />
-                      </button>
-                    </>
-                  )}
-
-                  <button 
-                    onClick={() => { setItemToMove(item); setIsMoveModalOpen(true); }}
-                    className="p-2.5 bg-white rounded-xl hover:bg-slate-100 text-indigo-600 font-bold transition-colors shadow-lg"
-                    title="Mover de carpeta"
-                  >
-                    <ArrowRight size={16} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Card info block */}
-              <div className="p-4 flex-1 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h3 
-                        onClick={item.isFolder ? () => setCurrentFolderId(item.id) : undefined}
-                        className={`font-bold text-slate-900 leading-tight truncate ${item.isFolder ? 'cursor-pointer hover:text-primary transition-colors hover:underline' : ''}`}
-                        title={item.name}
-                      >
-                        {item.name}
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5 truncate">{item.isFolder ? 'Carpeta del sistema' : item.fileName}</p>
-                    </div>
-                    {item.folio > 0 && (
-                      <div className="bg-primary/10 text-primary text-[9px] font-black px-1.5 py-0.5 rounded shrink-0 font-mono">
-                        #{item.folio.toString().padStart(4, '0')}
+                    
+                    {item.isFolder ? (
+                      <div className="flex flex-col items-center justify-center gap-2 mt-4 cursor-pointer" onClick={() => setCurrentFolderId(item.id)}>
+                        <Folder size={48} className="text-amber-400 fill-amber-200/85 group-hover:scale-110 transition-transform" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Carpeta</span>
+                      </div>
+                    ) : item.fileType.includes('image') ? (
+                      <img 
+                        src={item.fileData} 
+                        alt={item.name} 
+                        className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="text-slate-400 flex flex-col items-center justify-center gap-1.5 mt-4">
+                        {getFileIcon(item.fileType, item.fileName)}
+                        <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 mt-1">
+                          {item.fileName.split('.').pop()}
+                        </span>
                       </div>
                     )}
-                  </div>
-                </div>
-                
-                <div className="mt-4 flex items-center justify-between">
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${item.isFolder ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-slate-100 text-slate-600'}`}>
-                    {item.docType}
-                  </span>
-                  
-                  <button 
-                    onClick={() => handleDelete(item.id, item.name, item.isFolder)}
-                    className="p-1.5 text-slate-300 hover:text-rose-600 transition-colors rounded-lg hover:bg-slate-50"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+                    
+                    {/* Visual quick overlays */}
+                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-20">
+                      {item.isFolder ? (
+                        <button 
+                          onClick={() => setCurrentFolderId(item.id)}
+                          className="p-2 bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-lg font-bold text-xs flex items-center gap-1.5 text-slate-800 cursor-pointer"
+                        >
+                          <FolderOpen size={16} className="text-amber-500" />
+                          <span>Abrir</span>
+                        </button>
+                      ) : (
+                        <>
+                          <button 
+                            onClick={() => setPreviewItem(item)}
+                            className="p-2 bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-lg font-bold text-xs flex items-center gap-1.5 text-slate-800 cursor-pointer"
+                          >
+                            <Eye size={16} className="text-slate-600" />
+                            <span>Ver Online</span>
+                          </button>
+                          
+                          <button 
+                            onClick={() => handleDownload(item)}
+                            className="p-2 bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-lg text-slate-800 cursor-pointer"
+                            title="Descargar"
+                          >
+                            <Download size={16} />
+                          </button>
+                        </>
+                      )}
 
-      {displayedFilesAndFolders.length === 0 && !loading && (
-        <div className="text-center py-24 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
-          <Folder size={48} className="mx-auto text-slate-300 mb-4" />
-          <h3 className="text-lg font-bold text-slate-900">No hay archivos en este nivel</h3>
-          <p className="text-sm text-slate-505 max-w-sm mx-auto mt-1">Crea nuevas carpetas independientes o sube documentación de forma directa.</p>
+                      <button 
+                        onClick={() => { setItemToMove(item); setIsMoveModalOpen(true); }}
+                        className="p-2 bg-white rounded-xl hover:bg-slate-100 text-indigo-600 font-bold transition-colors shadow-lg cursor-pointer"
+                        title="Mover de carpeta"
+                      >
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Card info block */}
+                  <div className="p-4 flex-1 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <h3 
+                            onClick={item.isFolder ? () => setCurrentFolderId(item.id) : undefined}
+                            className={`font-black text-slate-800 leading-snug truncate ${item.isFolder ? 'cursor-pointer hover:text-primary transition-colors hover:underline' : ''}`}
+                            title={item.name}
+                          >
+                            {item.name}
+                          </h3>
+                          <p className="text-xs text-slate-450 mt-0.5 truncate">{item.isFolder ? 'Directorio de archivos' : item.fileName}</p>
+                        </div>
+                        {item.folio > 0 && (
+                          <div className="bg-primary/10 text-primary text-[9px] font-black px-1.5 py-0.5 rounded shrink-0 font-mono">
+                            #{item.folio.toString().padStart(4, '0')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="mt-4 flex items-center justify-between">
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${item.isFolder ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-slate-100 text-slate-600'}`}>
+                        {item.docType}
+                      </span>
+                      
+                      <button 
+                        onClick={() => handleDelete(item.id, item.name, item.isFolder)}
+                        className="p-1.5 text-slate-300 hover:text-rose-650 hover:bg-slate-50 hover:text-rose-600 transition-colors rounded-lg cursor-pointer"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+
+          {displayedFilesAndFolders.length === 0 && !loading && (
+            <div className="text-center py-24 bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+              <Folder size={48} className="mx-auto text-slate-300 mb-4 animate-bounce" />
+              <h3 className="text-base font-black text-slate-900">No hay elementos en este directorio</h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">Sube archivos o genera nuevas carpetas directamente aquí dentro para organizarlos jerárquicamente.</p>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Folders Create Modal */}
       <Modal
         isOpen={isFolderModalOpen}
         onClose={() => setIsFolderModalOpen(false)}
-        title="Crear Nueva Carpeta Independiente"
+        title={currentFolderId ? "Crear Nueva Subcarpeta" : "Crear Nueva Carpeta Independiente"}
       >
         <form onSubmit={handleCreateFolder} className="space-y-4">
           <div>
@@ -788,7 +873,7 @@ export default function LibraryView() {
               type="button"
               onClick={processUpload}
               disabled={uploading || uploadQueue.length === 0 || uploadQueue.every(q => q.status === 'complete')}
-              className="px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary/90 transition-all font-medium flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary/90 transition-all font-medium flex items-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               {uploading ? 'Subiendo...' : 'Subir Lote'}
             </button>
@@ -803,35 +888,38 @@ export default function LibraryView() {
         title={`Organizar y Mover: ${itemToMove?.name}`}
       >
         <div className="space-y-4">
-          <p className="text-xs text-slate-500">Selecciona la carpeta de destino donde deseas reubicar este elemento para organizar la biblioteca corporativa:</p>
+          <p className="text-xs text-slate-500">Selecciona la carpeta de destino donde deseas reubicar este elemento:</p>
           
-          <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white">
+          <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white shadow-inner">
             {/* Raiz Option */}
             <button
               onClick={() => handleMoveItem(null)}
-              className="w-full text-left p-3.5 hover:bg-slate-50 transition-colors flex items-center gap-2 text-xs font-bold text-slate-800"
+              className="w-full text-left p-3.5 hover:bg-slate-50 transition-colors flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer"
             >
-              <FolderOpen size={16} className="text-slate-400 shrink-0" />
-              <span>Biblioteca Raíz</span>
-              {itemToMove?.folderId === null && <Check size={14} className="text-primary ml-auto shrink-0 animate-pulse" />}
+              <FolderOpen size={16} className="text-primary shrink-0" />
+              <span>[ Biblioteca Raíz (/) ]</span>
+              {itemToMove?.folderId === null && <Check size={14} className="text-primary ml-auto shrink-0" />}
             </button>
 
             {getAvailableMoveDestinationFolders(itemToMove).length > 0 ? (
-              getAvailableMoveDestinationFolders(itemToMove).map((folder) => (
+              getSortedFoldersListWithDepth(getAvailableMoveDestinationFolders(itemToMove)).map(({ folder, depth }) => (
                 <button
                   key={folder.id}
                   onClick={() => handleMoveItem(folder.id)}
-                  className="w-full text-left p-3.5 hover:bg-slate-50 transition-colors flex items-center gap-2.5 text-xs text-slate-700 font-bold"
+                  className="w-full text-left p-3 hover:bg-slate-50 transition-colors flex items-center text-xs text-slate-700 font-bold cursor-pointer"
+                  style={{ paddingLeft: `${(depth + 1) * 16}px` }}
                 >
-                  <CornerDownRight size={14} className="text-slate-350 shrink-0" />
-                  <Folder size={16} className="text-amber-400 fill-amber-100 shrink-0" />
-                  <span className="truncate">{folder.name}</span>
-                  {itemToMove?.folderId === folder.id && <Check size={14} className="text-primary ml-auto" />}
+                  <div className="flex items-center gap-1.5 truncate">
+                    <CornerDownRight size={12} className="text-slate-350 shrink-0" />
+                    <Folder size={15} className="text-amber-500 fill-amber-100 shrink-0 select-none" />
+                    <span className="truncate">{folder.name}</span>
+                  </div>
+                  {itemToMove?.folderId === folder.id && <Check size={14} className="text-primary ml-auto shrink-0" />}
                 </button>
               ))
             ) : (
-              <div className="p-5 text-center text-slate-400 text-xs">
-                No hay más carpetas independientes creadas para mover.
+              <div className="p-5 text-center text-slate-400 text-xs italic">
+                No hay más carpetas jerárquicas creadas para mover.
               </div>
             )}
           </div>
@@ -839,7 +927,7 @@ export default function LibraryView() {
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-50">
             <button
               onClick={() => setIsMoveModalOpen(false)}
-              className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50"
+              className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
             >
               Cancelar
             </button>
@@ -950,4 +1038,110 @@ export default function LibraryView() {
 // Visual and interactive document engine
 function VisorDocumento({ item }: { item: LibraryItem | null }) {
   return <DocumentPreviewViewer item={item} />;
+}
+
+interface FolderTreeNodeProps {
+  key?: string;
+  folder: LibraryItem;
+  depth: number;
+  allFolders: LibraryItem[];
+  currentFolderId: string | null;
+  setCurrentFolderId: (id: string | null) => void;
+  expandedFolders: Record<string, boolean>;
+  toggleExpand: (id: string) => void;
+  items: LibraryItem[];
+}
+
+function FolderTreeNode({
+  folder,
+  depth,
+  allFolders,
+  currentFolderId,
+  setCurrentFolderId,
+  expandedFolders,
+  toggleExpand,
+  items
+}: FolderTreeNodeProps) {
+  const isExpanded = !!expandedFolders[folder.id];
+  const isSelected = currentFolderId === folder.id;
+  const subFolders = allFolders.filter(f => f.folderId === folder.id);
+  const directFiles = items.filter(item => !item.isFolder && item.folderId === folder.id);
+
+  return (
+    <div className="space-y-1">
+      <div 
+        className={`flex items-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
+          isSelected 
+            ? 'bg-primary/10 text-primary font-black shadow-none font-bold' 
+            : 'text-slate-700 hover:bg-slate-50'
+        }`}
+        style={{ paddingLeft: `${Math.max(8, depth * 12)}px` }}
+      >
+        {/* Expand/Collapse arrow */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleExpand(folder.id);
+          }}
+          className="p-0.5 hover:bg-slate-200/65 rounded transition-colors text-slate-400 cursor-pointer"
+        >
+          {subFolders.length > 0 ? (
+            isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />
+          ) : (
+            <div className="w-3" />
+          )}
+        </button>
+
+        <div 
+          onClick={() => setCurrentFolderId(folder.id)}
+          className="flex items-center gap-1.5 flex-1 min-w-0"
+        >
+          {isExpanded ? (
+            <FolderOpen size={14} className={isSelected ? 'text-primary' : 'text-amber-500'} />
+          ) : (
+            <Folder size={14} className={isSelected ? 'text-primary' : 'text-amber-400'} />
+          )}
+          <span className="truncate select-none">{folder.name}</span>
+          <span className="ml-auto text-[9px] text-slate-400 font-mono font-bold bg-slate-100 px-1 rounded-md">
+            {directFiles.length}
+          </span>
+        </div>
+      </div>
+
+      {isExpanded && subFolders.length > 0 && (
+        <div className="space-y-0.5">
+          {subFolders.map(subFolder => (
+            <FolderTreeNode
+              key={subFolder.id}
+              folder={subFolder}
+              depth={depth + 1}
+              allFolders={allFolders}
+              currentFolderId={currentFolderId}
+              setCurrentFolderId={setCurrentFolderId}
+              expandedFolders={expandedFolders}
+              toggleExpand={toggleExpand}
+              items={items}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Flat sorted nested folder with depth indicator for Move modal dropdown tree representation
+function getSortedFoldersListWithDepth(
+  availableFolders: LibraryItem[],
+  parentId: string | null = null,
+  depth = 0
+): Array<{ folder: LibraryItem; depth: number }> {
+  let list: Array<{ folder: LibraryItem; depth: number }> = [];
+  const levelFolders = availableFolders.filter(f => f.folderId === parentId);
+  for (const folder of levelFolders) {
+    list.push({ folder, depth });
+    const subList = getSortedFoldersListWithDepth(availableFolders, folder.id, depth + 1);
+    list = list.concat(subList);
+  }
+  return list;
 }

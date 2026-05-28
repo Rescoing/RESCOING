@@ -6,7 +6,9 @@ import {
   RotateCw, 
   ZoomIn, 
   ZoomOut,
-  File
+  File,
+  Search,
+  Download
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -18,9 +20,56 @@ interface PreviewItem {
   fileData: string; // Base64 loaded string
 }
 
+// Memory-safe hook to convert Base64 strings to Blob URLs for lightning-fast rendering
+export function useBlobUrl(base64Data: string, fileType: string) {
+  const [blobUrl, setBlobUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (!base64Data) return;
+    
+    let active = true;
+    let url = '';
+    
+    try {
+      const base64Clean = base64Data.split(';base64,')[1] || base64Data;
+      const mimeMatch = base64Data.match(/^data:([^;]+);base64,/);
+      const mime = mimeMatch ? mimeMatch[1] : fileType;
+      
+      const binaryString = atob(base64Clean);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const blob = new Blob([bytes], { type: mime });
+      url = URL.createObjectURL(blob);
+      if (active) {
+        setBlobUrl(url);
+      }
+    } catch (e) {
+      console.error("Error creating blob url:", e);
+      // Fallback
+      if (active) {
+        setBlobUrl(base64Data);
+      }
+    }
+
+    return () => {
+      active = false;
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [base64Data, fileType]);
+
+  return blobUrl;
+}
+
 export function DocumentPreviewViewer({ item }: { item: PreviewItem | null }) {
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
+  const blobUrl = useBlobUrl(item?.fileData || '', item?.fileType || '');
 
   if (!item) return null;
 
@@ -73,19 +122,23 @@ export function DocumentPreviewViewer({ item }: { item: PreviewItem | null }) {
         <div className="flex items-center justify-between p-2 px-3 bg-rose-50 text-rose-800 rounded-lg text-xs font-bold border border-rose-100 shrink-0">
           <div className="flex items-center gap-2">
             <FileText size={15} className="text-rose-600" />
-            <span>Visualizador de PDF integrado de forma digital</span>
+            <span>Visualizador de PDF integrado en el navegador</span>
           </div>
-          <span className="text-[10px] text-rose-600 font-mono">Compatible con navegador moderno</span>
+          <span className="text-[10px] text-rose-600 font-mono">Carga Inmediata (Blob URL)</span>
         </div>
 
-        <div className="w-full h-[500px] rounded-xl overflow-hidden bg-slate-200 shadow-inner relative border border-slate-200">
-          <embed 
-            src={item.fileData} 
-            type="application/pdf" 
-            className="w-full h-full"
-          />
+        <div className="w-full h-[520px] rounded-xl overflow-hidden bg-slate-200 shadow-inner relative border border-slate-200">
+          {blobUrl ? (
+            <iframe 
+              src={blobUrl} 
+              className="w-full h-full border-0"
+              title={item.name || item.fileName}
+            />
+          ) : (
+            <div className="p-8 text-center text-slate-400 text-xs animate-pulse">Cargando archivo PDF...</div>
+          )}
         </div>
-        <p className="text-[10px] text-slate-400 text-center leading-normal">Si tu navegador posee bloqueos de visor, por favor haz uso del botón "Descargar" en la barra superior.</p>
+        <p className="text-[10px] text-slate-400 text-center leading-normal">Si tu navegador no soporta visualización de PDFs embebidos, puedes descargarlo usando el enlace superior.</p>
       </div>
     );
   }
@@ -306,6 +359,8 @@ function ExcelPreview({ fileData, name }: { fileData: string, name: string }) {
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [rowLimit, setRowLimit] = useState(50);
 
   useEffect(() => {
     try {
@@ -332,6 +387,19 @@ function ExcelPreview({ fileData, name }: { fileData: string, name: string }) {
     }
   }, [fileData, activeSheet]);
 
+  const downloadCSV = () => {
+    if (!sheetData) return;
+    const csvContent = sheetData.map(e => e.map(val => `"${String(val || '').replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${name}_${sheetNames[activeSheet] || 'sheet'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (error) {
     return <div className="p-4 text-xs font-bold text-rose-500 bg-rose-50 rounded-xl leading-relaxed">{error}</div>;
   }
@@ -340,14 +408,50 @@ function ExcelPreview({ fileData, name }: { fileData: string, name: string }) {
     return <div className="p-8 text-center text-slate-400 text-xs font-bold animate-pulse">Analizando formato binario e interpretando celdas...</div>;
   }
 
+  // Filter rows by query, keeping header row unchanged
+  const headerRow = sheetData[0] || [];
+  const bodyRows = sheetData.slice(1);
+  const filteredBodyRows = bodyRows.filter(row => {
+    if (!searchQuery) return true;
+    return row.some(cell => 
+      cell !== null && cell !== undefined && 
+      String(cell).toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  });
+
+  const visibleRows = filteredBodyRows.slice(0, rowLimit);
+
   return (
     <div className="w-full flex flex-col gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-slate-100 p-2 rounded-xl border border-slate-200">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+          <input
+            type="text"
+            placeholder="Buscar dentro de la planilla de cálculo..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-8 pr-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        </div>
+        <div className="flex items-center gap-1.5 justify-end shrink-0">
+          <button
+            onClick={downloadCSV}
+            className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-2.5 py-1 text-[11px] font-bold transition-all shadow-sm cursor-pointer"
+            title="Exportar esta pestaña a CSV limpio"
+          >
+            <Download size={12} />
+            <span>Exportar CSV</span>
+          </button>
+        </div>
+      </div>
+
       {sheetNames.length > 1 && (
         <div className="flex gap-1 overflow-x-auto pb-1 border-b border-slate-200">
           {sheetNames.map((name, idx) => (
             <button
               key={name}
-              onClick={() => setActiveSheet(idx)}
+              onClick={() => { setActiveSheet(idx); setRowLimit(50); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${activeSheet === idx ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
               {name}
@@ -361,7 +465,7 @@ function ExcelPreview({ fileData, name }: { fileData: string, name: string }) {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="p-1 px-2 border-r border-slate-200 font-mono text-[10px] text-slate-400 bg-slate-50 text-center sticky top-0">#</th>
-              {sheetData[0]?.map((_, colIdx) => {
+              {headerRow.map((colName, colIdx) => {
                 let label = "";
                 let tempIdx = colIdx;
                 while (tempIdx >= 0) {
@@ -369,29 +473,51 @@ function ExcelPreview({ fileData, name }: { fileData: string, name: string }) {
                   tempIdx = Math.floor(tempIdx / 26) - 1;
                 }
                 return (
-                  <th key={colIdx} className="p-1.5 px-3 border-r border-slate-200 font-mono text-[10px] text-slate-500 bg-slate-50 text-center font-bold sticky top-0">
-                    {label}
+                  <th key={colIdx} className="p-1.5 px-3 border-r border-slate-200 bg-slate-50 text-slate-700 text-xs text-left font-extrabold sticky top-0 border-b shadow-sm z-30">
+                    <div className="flex flex-col">
+                      <span className="font-mono text-[9px] text-slate-400 font-normal">{label}</span>
+                      <span className="truncate max-w-[150px]" title={String(colName || '')}>{colName !== undefined ? String(colName) : ''}</span>
+                    </div>
                   </th>
                 );
               })}
             </tr>
           </thead>
           <tbody>
-            {sheetData.map((row, rowIdx) => (
+            {visibleRows.map((row, rowIdx) => (
               <tr key={rowIdx} className="border-b border-slate-100 hover:bg-slate-50/50">
                 <td className="p-1 px-2 border-r border-slate-200 font-mono text-[10px] text-slate-400 bg-slate-50/50 text-center font-black sticky left-0 shadow-sm">
                   {rowIdx + 1}
                 </td>
-                {row.map((cell: any, cellIdx: number) => (
-                  <td key={cellIdx} className="p-1.5 px-3 border-r border-slate-100 text-xs text-slate-605 font-medium">
-                    {cell !== null && cell !== undefined ? String(cell) : ""}
-                  </td>
-                ))}
+                {row.map((cell: any, cellIdx: number) => {
+                  const cellStr = cell !== null && cell !== undefined ? String(cell) : "";
+                  const isMatch = searchQuery && cellStr.toLowerCase().includes(searchQuery.toLowerCase());
+                  return (
+                    <td 
+                      key={cellIdx} 
+                      className={`p-1.5 px-3 border-r border-slate-100 text-xs font-medium ${isMatch ? 'bg-amber-100 text-amber-950 font-bold' : 'text-slate-600'}`}
+                    >
+                      {cellStr}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {filteredBodyRows.length > rowLimit && (
+        <div className="flex justify-center p-2 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={() => setRowLimit(prev => prev + 50)}
+            className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-1.5 rounded-lg transition-colors font-bold cursor-pointer"
+          >
+            Mostrar más filas ({filteredBodyRows.length - rowLimit} restantes)
+          </button>
+        </div>
+      )}
     </div>
   );
 }
