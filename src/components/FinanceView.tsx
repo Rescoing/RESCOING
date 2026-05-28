@@ -312,6 +312,41 @@ export default function FinanceView({
     return false;
   });
 
+  // KPI Calculations
+  const cashInflow = invoices
+    .filter(i => i.status === 'Pagado')
+    .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+
+  const paidPurchaseExpenses = purchaseInvoices
+    .filter(p => p.status === 'paid')
+    .reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+
+  const paidPayrollExpenses = payrolls
+    .filter(p => p.status === 'paid')
+    .reduce((sum, p) => sum + (p.netPay || 0), 0);
+
+  const cashOutflow = paidPurchaseExpenses + paidPayrollExpenses;
+  const operatingCashFlow = cashInflow - cashOutflow;
+
+  // Receivables (Invoices pending / overdue)
+  const accountsReceivable = invoices
+    .filter(i => i.status !== 'Pagado')
+    .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+
+  // Payables (Purchase invoices pending/overdue + draft/unpaid payrolls)
+  const pendingPurchaseExpenses = purchaseInvoices
+    .filter(p => p.status !== 'paid')
+    .reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+
+  const pendingPayrollExpenses = payrolls
+    .filter(p => p.status !== 'paid')
+    .reduce((sum, p) => sum + (p.netPay || 0), 0);
+
+  const accountsPayable = pendingPurchaseExpenses + pendingPayrollExpenses;
+
+  // Collection efficiency
+  const collectionRate = totalBilling > 0 ? (cashInflow / totalBilling) * 100 : 0;
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 text-sm font-sans">
@@ -345,6 +380,94 @@ export default function FinanceView({
             <Calendar size={18} />
             {dateFilter.start || dateFilter.end ? 'Filtrado' : 'Filtrar Fechas'}
           </button>
+        </div>
+      </div>
+
+      {/* Finance KPIs Summary Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 select-none">
+        {/* Operating Cash Flow KPI Card */}
+        <div className={`p-5 bg-white rounded-2xl border shadow-sm transition-all hover:shadow-md ${operatingCashFlow >= 0 ? 'border-emerald-100 hover:border-emerald-200' : 'border-rose-100 hover:border-rose-200'}`}>
+          <div className="flex justify-between items-start gap-2">
+            <div>
+              <span className="text-[10px] font-bold text-slate-450 uppercase tracking-widest block mb-1">Flujo de Caja Real</span>
+              <h3 className={`text-2xl font-black font-mono tracking-tight ${operatingCashFlow >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                ${operatingCashFlow.toLocaleString()}
+              </h3>
+            </div>
+            <span className={`p-2 rounded-xl shrink-0 ${operatingCashFlow >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+              <TrendingUp size={16} />
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 font-medium mt-3.5 flex items-center gap-1">
+            <span className="font-bold text-emerald-600">${cashInflow.toLocaleString()} rec.</span>
+            <span>v/s</span>
+            <span className="font-bold text-rose-500">${cashOutflow.toLocaleString()} pag.</span>
+          </p>
+        </div>
+
+        {/* Cash Inflow KPI Card */}
+        <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md hover:border-slate-300">
+          <div className="flex justify-between items-start gap-2">
+            <div>
+              <span className="text-[10px] font-bold text-slate-450 uppercase tracking-widest block mb-1">Efectivo Recaudado</span>
+              <h3 className="text-2xl font-black font-mono tracking-tight text-slate-900">
+                ${cashInflow.toLocaleString()}
+              </h3>
+            </div>
+            <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl shrink-0">
+              <ArrowUpRight size={16} />
+            </span>
+          </div>
+          <div className="mt-3">
+            <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
+              <span>Eficiencia de Cobro</span>
+              <span className="text-emerald-600 font-black">{collectionRate.toFixed(1)}%</span>
+            </div>
+            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-emerald-500 rounded-full transition-all" 
+                style={{ width: `${Math.min(100, collectionRate)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Accounts Receivable KPI Card */}
+        <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md hover:border-slate-300">
+          <div className="flex justify-between items-start gap-2">
+            <div>
+              <span className="text-[10px] font-bold text-slate-450 uppercase tracking-widest block mb-1">Cuentas por Cobrar</span>
+              <h3 className="text-2xl font-black font-mono tracking-tight text-amber-600">
+                ${accountsReceivable.toLocaleString()}
+              </h3>
+            </div>
+            <span className="p-2 bg-amber-50 text-amber-600 rounded-xl shrink-0">
+              <Clock size={16} />
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 font-medium mt-3.5">
+            <span className="font-bold text-slate-700">{invoices.filter(i => i.status !== 'Pagado').length}</span> documentos vigentes o vencidos
+          </p>
+        </div>
+
+        {/* Accounts Payable KPI Card */}
+        <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md hover:border-slate-300">
+          <div className="flex justify-between items-start gap-2">
+            <div>
+              <span className="text-[10px] font-bold text-slate-450 uppercase tracking-widest block mb-1">Cuentas por Pagar</span>
+              <h3 className="text-2xl font-black font-mono tracking-tight text-slate-800">
+                ${accountsPayable.toLocaleString()}
+              </h3>
+            </div>
+            <span className="p-2 bg-slate-100 text-slate-600 rounded-xl shrink-0">
+              <ArrowDownLeft size={16} />
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 font-medium mt-3.5 flex flex-wrap items-center gap-1">
+            <span className="font-bold text-slate-700">${pendingPurchaseExpenses.toLocaleString()} prov.</span>
+            <span>+</span>
+            <span className="font-bold text-slate-700">${pendingPayrollExpenses.toLocaleString()} nóminas</span>
+          </p>
         </div>
       </div>
 

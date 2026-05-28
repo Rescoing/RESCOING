@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
 import { Clock, CheckCircle2, AlertCircle, Plus, Edit2, Trash2, ListChecks, FileText, ShieldAlert, ChevronRight, Save, Flame, HelpCircle, Upload, File, MoreVertical, Download, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Project, ProjectTask, RiskPreventionRecord, ProjectDocument, Contact } from '../types';
+import { Project, ProjectTask, RiskPreventionRecord, ProjectDocument, Contact, UserProfile } from '../types';
 import Modal from './ui/Modal';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -26,11 +26,112 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<any | null>(null);
+  const [systemUsers, setSystemUsers] = useState<UserProfile[]>([]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const projectRisks = riskRecords.filter(r => r.projectId === selectedProjectId);
+
+  useEffect(() => {
+    if (!user) return;
+    const qUsers = query(collection(db, 'users'));
+    const unsubUsers = onSnapshot(qUsers, (snap) => {
+      setSystemUsers(snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)));
+    });
+    return () => unsubUsers();
+  }, [user]);
+
+  const getAssignedUser = (uid?: string) => {
+    if (!uid) return null;
+    return systemUsers.find(u => u.uid === uid) || null;
+  };
+
+  const cleanTasks = (tasks: ProjectTask[]): ProjectTask[] => {
+    return tasks.map(t => {
+      const cleaned: any = {};
+      Object.entries(t).forEach(([key, val]) => {
+        if (val !== undefined && val !== null) {
+          cleaned[key] = val;
+        }
+      });
+      return cleaned as ProjectTask;
+    });
+  };
+
+  const changeTaskAssignee = async (projectId: string, taskId: string, assignedTo: string) => {
+    const p = projects.find(proj => proj.id === projectId);
+    if (!p) return;
+    const updatedTasks = (p.tasks || []).map(t => {
+      if (t.id !== taskId) return t;
+      const copy = { ...t };
+      if (assignedTo) {
+        copy.assignedTo = assignedTo;
+      } else {
+        delete copy.assignedTo;
+      }
+      return copy;
+    });
+    const projectRef = doc(db, 'projects', projectId);
+    await updateDoc(projectRef, { tasks: cleanTasks(updatedTasks) });
+  };
+
+  const getUniqueProjectAssignees = (projectTasks?: ProjectTask[]) => {
+    if (!projectTasks || projectTasks.length === 0) return [];
+    const assignedIds = Array.from(new Set(projectTasks.map(t => t.assignedTo).filter(Boolean))) as string[];
+    return assignedIds.map(uid => getAssignedUser(uid)).filter(Boolean) as UserProfile[];
+  };
+
+  const renderUserAvatar = (uid?: string, size = 26) => {
+    const assignedUser = getAssignedUser(uid);
+    if (!uid || !assignedUser) {
+      return (
+        <div 
+          className="rounded-full bg-slate-100 text-slate-400 border border-slate-200/60 flex items-center justify-center shrink-0 cursor-help"
+          style={{ width: `${size}px`, height: `${size}px` }}
+          title="Sin Asignar"
+        >
+          <HelpCircle size={size * 0.55} className="opacity-60" />
+        </div>
+      );
+    }
+    const initials = assignedUser.displayName
+      ? assignedUser.displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+      : assignedUser.email.substring(0, 2).toUpperCase();
+
+    if (assignedUser.photoURL) {
+      return (
+        <img
+          src={assignedUser.photoURL}
+          alt={assignedUser.displayName || 'Asignado'}
+          referrerPolicy="no-referrer"
+          className="rounded-full object-cover border border-slate-200/80 shrink-0"
+          style={{ width: `${size}px`, height: `${size}px` }}
+          title={`Asignado a: ${assignedUser.displayName || assignedUser.email}`}
+        />
+      );
+    }
+
+    const colors = [
+      'bg-indigo-50 text-indigo-700 border-indigo-200/85',
+      'bg-emerald-50 text-emerald-700 border-emerald-200/85',
+      'bg-amber-50 text-amber-700 border-amber-200/85',
+      'bg-purple-50 text-purple-700 border-purple-200/85',
+      'bg-rose-50 text-rose-700 border-rose-200/85',
+      'bg-sky-50 text-sky-700 border-sky-200/85'
+    ];
+    const colorIndex = uid.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0) % colors.length;
+    
+    return (
+      <div 
+        className={`rounded-full flex items-center justify-center font-black text-[9px] border shrink-0 ${colors[colorIndex]}`}
+        style={{ width: `${size}px`, height: `${size}px` }}
+        title={`Asignado a: ${assignedUser.displayName || assignedUser.email}`}
+      >
+        {initials}
+      </div>
+    );
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -151,18 +252,19 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
     if (!selectedProjectId || !newTask.title || !user) return;
 
     const taskToAdd: ProjectTask = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).substring(2, 11),
       title: newTask.title,
-      description: newTask.description,
-      status: 'pending',
-      dueDate: newTask.dueDate
+      status: 'pending'
     };
+    if (newTask.description) taskToAdd.description = newTask.description;
+    if (newTask.assignedTo) taskToAdd.assignedTo = newTask.assignedTo;
+    if (newTask.dueDate) taskToAdd.dueDate = newTask.dueDate;
 
     const projectRef = doc(db, 'projects', selectedProjectId);
     const updatedTasks = [...(selectedProject?.tasks || []), taskToAdd];
-    await updateDoc(projectRef, { tasks: updatedTasks });
+    await updateDoc(projectRef, { tasks: cleanTasks(updatedTasks) });
 
-    setNewTask({ title: '', description: '', status: 'pending', dueDate: '' });
+    setNewTask({ title: '', description: '', status: 'pending', dueDate: '', assignedTo: '' });
   };
 
   const toggleTaskStatus = async (projectId: string, taskId: string) => {
@@ -181,7 +283,7 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
     const progress = updatedTasks.length > 0 ? Math.round((completedCount / updatedTasks.length) * 100) : p.progress;
     
     const projectRef = doc(db, 'projects', projectId);
-    await updateDoc(projectRef, { tasks: updatedTasks, progress });
+    await updateDoc(projectRef, { tasks: cleanTasks(updatedTasks), progress });
   };
 
   const deleteTask = async (projectId: string, taskId: string) => {
@@ -189,7 +291,7 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
     if (!p) return;
     const updatedTasks = (p.tasks || []).filter(t => t.id !== taskId);
     const projectRef = doc(db, 'projects', projectId);
-    await updateDoc(projectRef, { tasks: updatedTasks });
+    await updateDoc(projectRef, { tasks: cleanTasks(updatedTasks) });
   };
 
   const handleAddRisk = async (e: FormEvent) => {
@@ -406,52 +508,123 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
         title={`Tareas: ${selectedProject?.name}`}
       >
         <div className="space-y-6 font-sans text-left">
-          <form onSubmit={handleAddTask} className="flex gap-2">
-            <input 
-              type="text" 
-              placeholder="Nueva tarea..."
-              className="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm"
-              value={newTask.title}
-              onChange={e => setNewTask({...newTask, title: e.target.value})}
-              required
-            />
-            <button className="p-2 bg-primary text-white rounded-lg hover:opacity-90">
-              <Plus size={20} />
-            </button>
+          {/* Detailed Task Add Form */}
+          <form onSubmit={handleAddTask} className="p-4 bg-slate-50 border border-slate-150 rounded-xl space-y-4">
+            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Crear Nueva Tarea</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Título del Entregable</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej: Revisar informe de cálculo..."
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-1 focus:ring-primary focus:outline-none"
+                  value={newTask.title || ''}
+                  onChange={e => setNewTask({...newTask, title: e.target.value})}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Fecha Límite</label>
+                <input 
+                  type="date"
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-1 focus:ring-primary focus:outline-none"
+                  value={newTask.dueDate || ''}
+                  onChange={e => setNewTask({...newTask, dueDate: e.target.value})}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 items-end">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Asignar a Responsable</label>
+                <select 
+                  className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-1 focus:ring-primary focus:outline-none cursor-pointer"
+                  value={newTask.assignedTo || ''}
+                  onChange={e => setNewTask({...newTask, assignedTo: e.target.value})}
+                >
+                  <option value="">Sin Asignar / Libre</option>
+                  {systemUsers.map(u => (
+                    <option key={u.uid} value={u.uid}>{u.displayName || u.email}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <button type="submit" className="w-full py-2 px-4 bg-primary text-white rounded-lg hover:opacity-95 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all">
+                  <Plus size={14} />
+                  <span>Añadir Tarea</span>
+                </button>
+              </div>
+            </div>
           </form>
 
-          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+          <div className="space-y-3.5 max-h-[350px] overflow-y-auto pr-2">
             {selectedProject?.tasks?.length === 0 && (
-              <div className="text-center py-8 text-slate-400">
+              <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-150 text-slate-400">
                 <ListChecks className="mx-auto mb-2 opacity-20" size={48} />
                 <p className="text-sm">No hay tareas creadas aún.</p>
               </div>
             )}
-            {selectedProject?.tasks?.map(task => (
-              <div key={task.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group">
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => toggleTaskStatus(selectedProject.id, task.id)}
-                    className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors
-                      ${task.status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white' : 
-                        task.status === 'in-progress' ? 'bg-amber-100 border-amber-300 text-amber-600' : 'bg-white border-slate-300'}
-                    `}
-                  >
-                    {task.status === 'completed' && <CheckCircle2 size={12} strokeWidth={3} />}
-                    {task.status === 'in-progress' && <Clock size={12} strokeWidth={3} />}
-                  </button>
-                  <span className={`text-sm font-medium ${task.status === 'completed' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
-                    {task.title}
-                  </span>
+            {selectedProject?.tasks?.map(task => {
+              const assignedUser = getAssignedUser(task.assignedTo);
+              return (
+                <div key={task.id} className="p-3.5 bg-white rounded-xl border border-slate-150 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 group relative select-none">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <button 
+                      type="button"
+                      onClick={() => toggleTaskStatus(selectedProject.id, task.id)}
+                      className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors mt-0.5 shrink-0 cursor-pointer
+                        ${task.status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white' : 
+                          task.status === 'in-progress' ? 'bg-amber-100 border-amber-300 text-amber-600' : 'bg-white border-slate-300'}
+                      `}
+                    >
+                      {task.status === 'completed' && <CheckCircle2 size={12} strokeWidth={3} />}
+                      {task.status === 'in-progress' && <Clock size={12} strokeWidth={3} />}
+                    </button>
+                    <div className="min-w-0">
+                      <p className={`text-sm font-bold tracking-tight ${task.status === 'completed' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                        {task.title}
+                      </p>
+                      {task.description && (
+                        <p className="text-xs text-slate-450 mt-0.5">{task.description}</p>
+                      )}
+                      {task.dueDate && (
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1.5 flex items-center gap-1">
+                          <Clock size={10} />
+                          <span>Vence: {task.dueDate}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-auto">
+                    {/* Inline Assignee Selector */}
+                    <div className="flex items-center gap-1.5 bg-slate-50/60 hover:bg-slate-50 border border-slate-100 hover:border-slate-200 p-1 rounded-lg transition-all">
+                      {renderUserAvatar(task.assignedTo, 22)}
+                      <select
+                        className="bg-transparent border-none text-[10px] font-bold text-slate-600 focus:outline-none pr-1 max-w-[110px] cursor-pointer"
+                        value={task.assignedTo || ''}
+                        onChange={(e) => changeTaskAssignee(selectedProject.id, task.id, e.target.value)}
+                      >
+                        <option value="">Sin Asignar</option>
+                        {systemUsers.map(u => (
+                          <option key={u.uid} value={u.uid}>
+                            {u.displayName || u.email}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button 
+                      type="button"
+                      onClick={() => deleteTask(selectedProject.id, task.id)}
+                      className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      title="Eliminar Tarea"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
-                <button 
-                  onClick={() => deleteTask(selectedProject.id, task.id)}
-                  className="text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
           
           <div className="pt-4 border-t border-slate-100 flex justify-between items-center text-xs font-bold text-slate-400 uppercase tracking-widest">
@@ -754,15 +927,55 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
                    Riesgos ({riskRecords.filter(r => r.projectId === project.id).length})
                  </button>
                  
-                 <div className="ml-auto flex -space-x-2">
-                   {[1,2,3].map(n => (
-                     <div key={n} className="w-8 h-8 rounded-full border-2 border-white bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                       {String.fromCharCode(64 + n)}
+                 <div className="ml-auto flex -space-x-2 select-none">
+                   {getUniqueProjectAssignees(project.tasks).slice(0, 4).map((assignee) => {
+                     const initials = assignee.displayName
+                       ? assignee.displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                       : assignee.email.substring(0, 2).toUpperCase();
+
+                     if (assignee.photoURL) {
+                       return (
+                         <img
+                           key={assignee.uid}
+                           src={assignee.photoURL}
+                           alt={assignee.displayName}
+                           referrerPolicy="no-referrer"
+                           className="w-8 h-8 rounded-full border-2 border-white object-cover shadow-sm cursor-help"
+                           title={`Asignado: ${assignee.displayName || assignee.email}`}
+                         />
+                       );
+                     }
+
+                     const colors = [
+                       'bg-indigo-100 text-indigo-85 border-indigo-250',
+                       'bg-emerald-100 text-emerald-85 border-emerald-250',
+                       'bg-amber-100 text-amber-85 border-amber-250',
+                       'bg-purple-100 text-purple-85 border-purple-250',
+                       'bg-rose-100 text-rose-85 border-rose-250',
+                       'bg-sky-100 text-sky-85 border-sky-250'
+                     ];
+                     const colorIndex = assignee.uid.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0) % colors.length;
+
+                     return (
+                       <div
+                         key={assignee.uid}
+                         className={`w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-black cursor-help ${colors[colorIndex]}`}
+                         title={`Asignado: ${assignee.displayName || assignee.email}`}
+                       >
+                         {initials}
+                       </div>
+                     );
+                   })}
+                   {getUniqueProjectAssignees(project.tasks).length > 4 && (
+                     <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-black" title="Más asignados">
+                       +{getUniqueProjectAssignees(project.tasks).length - 4}
                      </div>
-                   ))}
-                   <div className="w-8 h-8 rounded-full border-2 border-white bg-primary text-white flex items-center justify-center text-[10px] font-bold">
-                     +2
-                   </div>
+                   )}
+                   {getUniqueProjectAssignees(project.tasks).length === 0 && (
+                     <span className="text-[10px] font-bold text-slate-400 italic flex items-center px-1.5 uppercase tracking-wider self-center">
+                       Sin asignaciones
+                     </span>
+                   )}
                  </div>
               </div>
             </div>
