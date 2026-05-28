@@ -86,7 +86,7 @@ service cloud.firestore {
       allow read, list, update, delete: if isApproved() && (
         resource.data.senderId == request.auth.uid || 
         resource.data.receiverId == request.auth.uid || 
-        resource.data.channelId != null || 
+        resource.data.isGroup == true || 
         isAdmin()
       );
     }
@@ -100,8 +100,27 @@ service cloud.firestore {
     // --- Generic Owner-Scoped Collections ---
     // This pattern secures multiple collections where ownership is defined by 'ownerId'
     match /{collectionName}/{docId} {
-      allow list: if isApproved() && (resource.data.ownerId == request.auth.uid || isAdmin());
-      allow get: if isApproved() && (isOwner(resource.data.ownerId) || isAdmin()) && isValidId(docId);
+      allow list: if isApproved() 
+        && collectionName in [
+          'contacts', 'projects', 'inventory', 'riskRecords', 
+          'employees', 'suppliers', 'invoices', 'financeProcesses', 
+          'financeTasks', 'documents', 'library', 'folioCounters',
+          'attendance', 'payrolls', 'purchaseInvoices', 'paymentNotices',
+          'notifications', 'inventory_movements', 'systemLogs'
+        ]
+        && (resource.data.ownerId == request.auth.uid || isAdmin());
+
+      allow get: if isApproved() 
+        && collectionName in [
+          'contacts', 'projects', 'inventory', 'riskRecords', 
+          'employees', 'suppliers', 'invoices', 'financeProcesses', 
+          'financeTasks', 'documents', 'library', 'folioCounters',
+          'attendance', 'payrolls', 'purchaseInvoices', 'paymentNotices',
+          'notifications', 'inventory_movements', 'systemLogs'
+        ]
+        && (isOwner(resource.data.ownerId) || isAdmin()) 
+        && isValidId(docId);
+
       allow create: if isApproved() && (isOwner(incoming().ownerId) || isAdmin())
         && isValidId(docId)
         && collectionName in [
@@ -111,10 +130,28 @@ service cloud.firestore {
           'attendance', 'payrolls', 'purchaseInvoices', 'paymentNotices',
           'notifications', 'inventory_movements', 'systemLogs'
         ];
-      allow update: if isApproved() && (isOwner(existing().ownerId) || isAdmin())
+
+      allow update: if isApproved() 
+        && collectionName in [
+          'contacts', 'projects', 'inventory', 'riskRecords', 
+          'employees', 'suppliers', 'invoices', 'financeProcesses', 
+          'financeTasks', 'documents', 'library', 'folioCounters',
+          'attendance', 'payrolls', 'purchaseInvoices', 'paymentNotices',
+          'notifications', 'inventory_movements', 'systemLogs'
+        ]
+        && (isOwner(existing().ownerId) || isAdmin())
         && incoming().ownerId == existing().ownerId
         && isValidId(docId);
-      allow delete: if isApproved() && (isOwner(existing().ownerId) || isAdmin());
+
+      allow delete: if isApproved() 
+        && collectionName in [
+          'contacts', 'projects', 'inventory', 'riskRecords', 
+          'employees', 'suppliers', 'invoices', 'financeProcesses', 
+          'financeTasks', 'documents', 'library', 'folioCounters',
+          'attendance', 'payrolls', 'purchaseInvoices', 'paymentNotices',
+          'notifications', 'inventory_movements', 'systemLogs'
+        ]
+        && (isOwner(existing().ownerId) || isAdmin());
     }
   }
 }

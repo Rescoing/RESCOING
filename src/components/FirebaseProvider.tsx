@@ -108,18 +108,18 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               displayName: user.displayName || user.email?.split('@')[0] || 'Usuario',
               photoURL: user.photoURL || '',
               role: isDefaultAdmin ? 'admin' : 'user',
-              accessStatus: 'approved', // Auto-approve for smooth testing & chat
+              accessStatus: isDefaultAdmin ? 'approved' : 'pending',
               permissions: {
                 dashboard: true,
-                crm: true,
-                inventory: true,
-                operations: true,
-                finance: true,
-                documents: true,
-                suppliers: true,
-                hr: true,
-                library: true,
-                audit_log: true,
+                crm: isDefaultAdmin,
+                inventory: isDefaultAdmin,
+                operations: isDefaultAdmin,
+                finance: isDefaultAdmin,
+                documents: isDefaultAdmin,
+                suppliers: isDefaultAdmin,
+                hr: isDefaultAdmin,
+                library: isDefaultAdmin,
+                audit_log: isDefaultAdmin,
               },
               updatedAt: new Date().toISOString()
             };
@@ -134,19 +134,8 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
             displayName: user.displayName || user.email?.split('@')[0] || 'Usuario',
             photoURL: user.photoURL || '',
             role: isDefaultAdmin ? 'admin' : 'user',
-            accessStatus: 'approved', // Auto-approve for smooth testing
-            permissions: {
-              dashboard: true,
-              crm: true,
-              inventory: true,
-              operations: true,
-              finance: true,
-              documents: true,
-              suppliers: true,
-              hr: true,
-              library: true,
-              audit_log: true,
-            },
+            accessStatus: isDefaultAdmin ? 'approved' : 'pending',
+            permissions: { dashboard: true },
             updatedAt: new Date().toISOString()
           };
         }
