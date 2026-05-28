@@ -119,6 +119,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
                 suppliers: isDefaultAdmin,
                 hr: isDefaultAdmin,
                 library: isDefaultAdmin,
+                audit_log: isDefaultAdmin,
               },
               updatedAt: new Date().toISOString()
             };

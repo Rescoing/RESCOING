@@ -36,6 +36,7 @@ const MODULES = [
   { id: 'suppliers', label: 'Proveedores' },
   { id: 'hr', label: 'RRHH' },
   { id: 'library', label: 'Biblioteca' },
+  { id: 'audit_log', label: 'Auditoría' },
 ];
 
 export default function AdminUsersView() {

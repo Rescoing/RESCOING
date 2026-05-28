@@ -1,4 +1,4 @@
-export type Module = 'dashboard' | 'crm' | 'inventory' | 'operations' | 'finance' | 'documents' | 'suppliers' | 'hr' | 'library' | 'admin_users';
+export type Module = 'dashboard' | 'crm' | 'inventory' | 'operations' | 'finance' | 'documents' | 'suppliers' | 'hr' | 'library' | 'admin_users' | 'audit_log';
 
 export interface Item {
   id: string;
@@ -264,4 +264,16 @@ export interface UserProfile {
     [key: string]: boolean;
   };
   updatedAt: any;
+}
+
+export interface SystemLog {
+  id: string;
+  ownerId: string;
+  userEmail: string;
+  userName: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  description: string;
+  createdAt: any;
 }

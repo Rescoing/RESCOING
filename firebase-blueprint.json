@@ -282,6 +282,22 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "itemId", "itemName", "type", "quantity"]
+    },
+    "SystemLog": {
+      "title": "System Log",
+      "description": "System auditory log for important record changes",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "action": { "type": "string" },
+        "entityType": { "type": "string" },
+        "entityId": { "type": "string" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "userEmail", "action", "entityType", "description"]
     }
   },
   "firestore": {
@@ -360,6 +376,10 @@
     "/inventory_movements/{movementId}": {
       "schema": "InventoryMovement",
       "description": "Log of stock adjustments and movements"
+    },
+    "/systemLogs/{logId}": {
+      "schema": "SystemLog",
+      "description": "System auditory logs for important record changes"
     }
   }
 }

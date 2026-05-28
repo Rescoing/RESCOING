@@ -1,5 +1,5 @@
 import React, { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
-import { Search, Plus, Filter, MoreVertical, AlertTriangle, Trash2, Upload, Download, FileSpreadsheet, Edit, Package, Minus, Settings2 } from 'lucide-react';
+import { Search, Plus, Filter, MoreVertical, AlertTriangle, Trash2, Upload, Download, FileSpreadsheet, Edit, Package, Minus, Settings2, History, ArrowUpRight, ArrowDownLeft, Clock } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Item } from '../types';
 import Modal from './ui/Modal';
@@ -14,7 +14,7 @@ interface InventoryViewProps {
 }
 
 export default function InventoryView({ autoOpen, onModalHandled }: InventoryViewProps) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,6 +26,43 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
   const [adjustmentReason, setAdjustmentReason] = useState('');
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Movements state
+  const [activeTab, setActiveTab] = useState<'catalog' | 'movements'>('catalog');
+  const [movements, setMovements] = useState<any[]>([]);
+  const [loadingMovements, setLoadingMovements] = useState(true);
+  const [movementSearchTerm, setMovementSearchTerm] = useState('');
+  const [movementTypeFilter, setMovementTypeFilter] = useState<'all' | 'in' | 'out'>('all');
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Listen to movements in real-time
+    const movementsQuery = query(
+      collection(db, 'inventory_movements'),
+      where('ownerId', '==', user.uid)
+    );
+
+    const unsubMovements = onSnapshot(movementsQuery, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as any[];
+      // Sort in-memory descending by timestamp
+      docs.sort((a, b) => {
+        const timeA = a.timestamp?.seconds ? a.timestamp.seconds * 1000 : new Date(a.timestamp || 0).getTime();
+        const timeB = b.timestamp?.seconds ? b.timestamp.seconds * 1000 : new Date(b.timestamp || 0).getTime();
+        return timeB - timeA;
+      });
+      setMovements(docs);
+      setLoadingMovements(false);
+    }, (error) => {
+      console.error("Inventory movements snapshot error:", error);
+      setLoadingMovements(false);
+    });
+
+    return () => unsubMovements();
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -78,6 +115,17 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
     item.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const filteredMovements = movements.filter(m => {
+    const matchesSearch = !movementSearchTerm || 
+      m.itemName?.toLowerCase().includes(movementSearchTerm.toLowerCase()) ||
+      m.itemId?.toLowerCase().includes(movementSearchTerm.toLowerCase()) ||
+      m.reason?.toLowerCase().includes(movementSearchTerm.toLowerCase());
+
+    const matchesType = movementTypeFilter === 'all' || m.type === movementTypeFilter;
+
+    return matchesSearch && matchesType;
+  });
+
   const generateSKU = () => {
     const prefix = 'SKU';
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -104,9 +152,29 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
       
       if (editingItem) {
         await updateDoc(doc(db, 'inventory', editingItem.id), itemData);
+        await addDoc(collection(db, 'systemLogs'), {
+          ownerId: user.uid,
+          userEmail: user.email || '',
+          userName: profile?.displayName || user.displayName || 'Usuario',
+          action: 'update',
+          entityType: 'inventory',
+          entityId: editingItem.id,
+          description: `Se modificó el artículo "${itemData.name}" (SKU: ${itemData.sku}) en el catálogo de inventario.`,
+          createdAt: serverTimestamp()
+        });
       } else {
-        await addDoc(collection(db, 'inventory'), {
+        const docRef = await addDoc(collection(db, 'inventory'), {
           ...itemData,
+          createdAt: serverTimestamp()
+        });
+        await addDoc(collection(db, 'systemLogs'), {
+          ownerId: user.uid,
+          userEmail: user.email || '',
+          userName: profile?.displayName || user.displayName || 'Usuario',
+          action: 'create',
+          entityType: 'inventory',
+          entityId: docRef.id,
+          description: `Se creó el nuevo artículo "${itemData.name}" (SKU: ${itemData.sku}) con stock de ${itemData.stock} unidades.`,
           createdAt: serverTimestamp()
         });
       }
@@ -166,6 +234,18 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
         timestamp: serverTimestamp()
       });
 
+      // Write system auditory log entry
+      await addDoc(collection(db, 'systemLogs'), {
+        ownerId: user.uid,
+        userEmail: user.email || '',
+        userName: profile?.displayName || user.displayName || 'Usuario',
+        action: 'adjust',
+        entityType: 'inventory',
+        entityId: editingItem.id,
+        description: `Se ajustó el stock del artículo "${editingItem.name}" en ${adjustmentValue > 0 ? '+' : ''}${adjustmentValue} unidades. Razón: ${adjustmentReason || 'Ajuste manual'}. Stock resultante: ${newStock}.`,
+        createdAt: serverTimestamp()
+      });
+
       setIsAdjustingStock(false);
       setEditingItem(null);
     } catch (error) {
@@ -176,7 +256,21 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
 
   const handleDelete = async (id: string) => {
     if (window.confirm('¿Eliminar este artículo?')) {
+      const itemToDelete = items.find(item => item.id === id);
       await deleteDoc(doc(db, 'inventory', id));
+      
+      if (itemToDelete) {
+        await addDoc(collection(db, 'systemLogs'), {
+          ownerId: user?.uid || '',
+          userEmail: user?.email || '',
+          userName: profile?.displayName || user?.displayName || 'Usuario',
+          action: 'delete',
+          entityType: 'inventory',
+          entityId: id,
+          description: `Se eliminó el artículo "${itemToDelete.name}" (SKU: ${itemToDelete.sku || 'N/A'}) del inventario.`,
+          createdAt: serverTimestamp()
+        });
+      }
     }
   };
 
@@ -327,6 +421,32 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
             Nuevo Artículo
           </button>
         </div>
+      </div>
+
+      {/* Navegación por Pestañas */}
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab('catalog')}
+          className={`flex items-center gap-2 px-6 py-3 border-b-2 font-bold text-sm tracking-tight transition-all duration-150 ${
+            activeTab === 'catalog'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <Package size={16} />
+          <span>Catálogo de Materiales ({items.length})</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('movements')}
+          className={`flex items-center gap-2 px-6 py-3 border-b-2 font-bold text-sm tracking-tight transition-all duration-150 ${
+            activeTab === 'movements'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <History size={16} />
+          <span>Historial de Movimientos ({movements.length})</span>
+        </button>
       </div>
 
       <Modal 
@@ -646,118 +766,229 @@ export default function InventoryView({ autoOpen, onModalHandled }: InventoryVie
         </form>
       </Modal>
 
-      <div className="flex flex-col md:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input 
-            type="text" 
-            placeholder="Buscar por nombre o SKU..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-sans text-sm"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors font-medium text-sm">
-          <Filter size={18} />
-          Filtros Avanzados
-        </button>
-      </div>
+      {activeTab === 'catalog' ? (
+        <>
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Buscar por nombre o SKU..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-sans text-sm"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors font-medium text-sm">
+              <Filter size={18} />
+              Filtros Avanzados
+            </button>
+          </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100">
-                <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Artículo</th>
-                <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Categoría</th>
-                <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400 text-right">Precio Neto</th>
-                <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Stock Actual</th>
-                <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Estado</th>
-                <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="p-20 text-center">
-                    <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Cargando Inventario...</p>
-                  </td>
-                </tr>
-              ) : filteredItems.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="p-20 text-center">
-                    <p className="text-slate-400 text-sm">No hay artículos que coincidan con la búsqueda.</p>
-                  </td>
-                </tr>
-              ) : filteredItems.map((item, i) => {
-                const isLowStock = item.stock <= item.minStock;
-                return (
-                  <motion.tr 
-                    key={item.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="hover:bg-slate-50/50 transition-colors cursor-pointer group"
-                    onClick={() => { setEditingItem(item); setIsDetailModalOpen(true); }}
-                  >
-                    <td className="p-4">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-slate-900">{item.name}</span>
-                        {item.brand && <span className="text-[10px] text-slate-500 font-medium">{item.brand} {item.model}</span>}
-                        <span className="text-[10px] text-slate-400 font-mono uppercase font-bold">{item.sku}</span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-sm text-slate-600 font-medium">{item.category}</td>
-                    <td className="p-4 text-right">
-                      <span className="font-mono text-sm font-bold text-slate-900">${(item.netPrice || 0).toLocaleString()}</span>
-                    </td>
-                    <td className="p-4">
-                      <span className="font-mono text-sm font-bold text-slate-700">{item.stock} {item.unit}</span>
-                    </td>
-                    <td className="p-4">
-                      {isLowStock ? (
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 text-[10px] font-bold border border-rose-100 uppercase tracking-wider">
-                          <AlertTriangle size={10} />
-                          Stock Bajo
-                        </div>
-                      ) : (
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-100 uppercase tracking-wider">
-                          Nivel Óptimo
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); startAdjustment(item); }}
-                          title="Gestionar Stock"
-                          className="p-1.5 text-slate-400 hover:text-primary transition-colors bg-slate-50 rounded"
-                        >
-                          <Settings2 size={14} />
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); startEdit(item); }}
-                          title="Editar Detalles"
-                          className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-slate-50 rounded"
-                        >
-                          <Edit size={14} />
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-slate-50 rounded"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </motion.tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden text-left">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 border-b border-slate-100">
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Artículo</th>
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Categoría</th>
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400 text-right">Precio Neto</th>
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Stock Actual</th>
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Estado</th>
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={6} className="p-20 text-center">
+                        <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Cargando Inventario...</p>
+                      </td>
+                    </tr>
+                  ) : filteredItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-20 text-center">
+                        <p className="text-slate-400 text-sm">No hay artículos que coincidan con la búsqueda.</p>
+                      </td>
+                    </tr>
+                  ) : filteredItems.map((item, i) => {
+                    const isLowStock = item.stock <= item.minStock;
+                    return (
+                      <motion.tr 
+                        key={item.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.05 }}
+                        className="hover:bg-slate-50/50 transition-colors cursor-pointer group"
+                        onClick={() => { setEditingItem(item); setIsDetailModalOpen(true); }}
+                      >
+                        <td className="p-4">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-900">{item.name}</span>
+                            {item.brand && <span className="text-[10px] text-slate-500 font-medium">{item.brand} {item.model}</span>}
+                            <span className="text-[10px] text-slate-400 font-mono uppercase font-bold">{item.sku}</span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-sm text-slate-600 font-medium">{item.category}</td>
+                        <td className="p-4 text-right">
+                          <span className="font-mono text-sm font-bold text-slate-900">${(item.netPrice || 0).toLocaleString()}</span>
+                        </td>
+                        <td className="p-4">
+                          <span className="font-mono text-sm font-bold text-slate-700">{item.stock} {item.unit}</span>
+                        </td>
+                        <td className="p-4">
+                          {isLowStock ? (
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 text-[10px] font-bold border border-rose-100 uppercase tracking-wider">
+                              <AlertTriangle size={10} />
+                              Stock Bajo
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-100 uppercase tracking-wider">
+                              Nivel Óptimo
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); startAdjustment(item); }}
+                              title="Gestionar Stock"
+                              className="p-1.5 text-slate-400 hover:text-primary transition-colors bg-slate-50 rounded"
+                            >
+                              <Settings2 size={14} />
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); startEdit(item); }}
+                              title="Editar Detalles"
+                              className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors bg-slate-50 rounded"
+                            >
+                              <Edit size={14} />
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors bg-slate-50 rounded"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Listado de movimientos de inventario */}
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Buscar movimiento por artículo o motivo..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-sans text-sm"
+                value={movementSearchTerm}
+                onChange={(e) => setMovementSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={movementTypeFilter}
+                onChange={(e) => setMovementTypeFilter(e.target.value as 'all' | 'in' | 'out')}
+                className="px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/20 font-bold text-sm"
+              >
+                <option value="all">Todos los Movimientos</option>
+                <option value="in">Ingresos (Stock +)</option>
+                <option value="out">Egresos (Stock -)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden text-left font-sans">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 border-b border-slate-100">
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Artículo</th>
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400 text-center">Tipo</th>
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400 text-right">Cantidad</th>
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400">Motivo de Ajuste</th>
+                    <th className="p-4 font-bold text-xs uppercase tracking-widest text-slate-400 text-right">Fecha y Hora</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50 font-medium text-slate-700">
+                  {loadingMovements ? (
+                    <tr>
+                      <td colSpan={5} className="p-20 text-center">
+                        <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Cargando Movimientos...</p>
+                      </td>
+                    </tr>
+                  ) : filteredMovements.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-20 text-center">
+                        <p className="text-slate-400 text-sm">No se encontraron movimientos registrados.</p>
+                      </td>
+                    </tr>
+                  ) : filteredMovements.map((movement, i) => {
+                    const isIncoming = movement.type === 'in';
+                    const dateObj = movement.timestamp?.seconds ? new Date(movement.timestamp.seconds * 1000) : new Date(movement.timestamp || 0);
+                    const formattedDate = dateObj.toLocaleString('es-CL', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    });
+
+                    return (
+                      <motion.tr 
+                        key={movement.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="hover:bg-slate-50/50 transition-colors"
+                      >
+                        <td className="p-4 font-bold text-slate-900">
+                          {movement.itemName || 'Artículo Desconocido'}
+                        </td>
+                        <td className="p-4 text-center">
+                          {isIncoming ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-100 uppercase tracking-wider">
+                              <ArrowUpRight size={12} className="text-emerald-600" />
+                              Ingreso
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 text-[10px] font-bold border border-rose-100 uppercase tracking-wider">
+                              <ArrowDownLeft size={12} className="text-rose-600" />
+                              Egreso
+                            </span>
+                          )}
+                        </td>
+                        <td className={`p-4 text-right font-mono font-bold text-sm ${isIncoming ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {isIncoming ? '+' : '-'}{movement.quantity}
+                        </td>
+                        <td className="p-4 text-slate-600 text-xs">
+                          {movement.reason}
+                        </td>
+                        <td className="p-4 text-right text-slate-450 font-mono text-[11px]">
+                          <div className="flex items-center justify-end gap-1">
+                            <Clock size={11} className="text-slate-350" />
+                            <span>{formattedDate}</span>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -27,7 +27,8 @@ import {
   Clock,
   XCircle,
   Shield,
-  Bell
+  Bell,
+  History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Module, Item, Contact, Project, Invoice, Document, Supplier, Employee, FinanceProcess, FinanceTask, RiskPreventionRecord } from './types';
@@ -41,6 +42,7 @@ import SuppliersView from './components/SuppliersView';
 import HRView from './components/HRView';
 import LibraryView from './components/LibraryView';
 import AdminUsersView from './components/AdminUsersView';
+import AuditLogView from './components/AuditLogView';
 import { FirebaseProvider, useAuth } from './components/FirebaseProvider';
 import LoginView from './components/LoginView';
 import SettingsModal from './components/SettingsModal';
@@ -147,6 +149,7 @@ function AppContent() {
     { id: 'suppliers', label: 'Proveedores', icon: Truck },
     { id: 'hr', label: 'RRHH', icon: UserRound },
     { id: 'library', label: 'Biblioteca', icon: FolderOpen },
+    { id: 'audit_log', label: 'Auditoría', icon: History },
   ];
 
   // Filter items by permission
@@ -475,6 +478,9 @@ function AppContent() {
               )}
               {activeModule === 'library' && hasPermission('library') && (
                 <LibraryView />
+              )}
+              {activeModule === 'audit_log' && hasPermission('audit_log') && (
+                <AuditLogView />
               )}
               {activeModule === 'admin_users' && profile?.role === 'admin' && (
                 <AdminUsersView />
