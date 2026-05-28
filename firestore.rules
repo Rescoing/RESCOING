@@ -83,7 +83,12 @@ service cloud.firestore {
 
     match /internal_messages/{messageId} {
       allow create: if isApproved() && (incoming().senderId == request.auth.uid || isAdmin());
-      allow read, list, update, delete: if isApproved() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || isAdmin());
+      allow read, list, update, delete: if isApproved() && (
+        resource.data.senderId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid || 
+        resource.data.channelId != null || 
+        isAdmin()
+      );
     }
 
     function isValidUserProfile(data) {

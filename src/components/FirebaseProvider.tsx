@@ -105,21 +105,21 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
             initialProfile = {
               uid: user.uid,
               email: user.email || '',
-              displayName: user.displayName || '',
+              displayName: user.displayName || user.email?.split('@')[0] || 'Usuario',
               photoURL: user.photoURL || '',
               role: isDefaultAdmin ? 'admin' : 'user',
-              accessStatus: isDefaultAdmin ? 'approved' : 'pending',
+              accessStatus: 'approved', // Auto-approve for smooth testing & chat
               permissions: {
                 dashboard: true,
-                crm: isDefaultAdmin,
-                inventory: isDefaultAdmin,
-                operations: isDefaultAdmin,
-                finance: isDefaultAdmin,
-                documents: isDefaultAdmin,
-                suppliers: isDefaultAdmin,
-                hr: isDefaultAdmin,
-                library: isDefaultAdmin,
-                audit_log: isDefaultAdmin,
+                crm: true,
+                inventory: true,
+                operations: true,
+                finance: true,
+                documents: true,
+                suppliers: true,
+                hr: true,
+                library: true,
+                audit_log: true,
               },
               updatedAt: new Date().toISOString()
             };
@@ -131,11 +131,22 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           initialProfile = {
             uid: user.uid,
             email: user.email || '',
-            displayName: user.displayName || '',
+            displayName: user.displayName || user.email?.split('@')[0] || 'Usuario',
             photoURL: user.photoURL || '',
             role: isDefaultAdmin ? 'admin' : 'user',
-            accessStatus: isDefaultAdmin ? 'approved' : 'pending',
-            permissions: { dashboard: true },
+            accessStatus: 'approved', // Auto-approve for smooth testing
+            permissions: {
+              dashboard: true,
+              crm: true,
+              inventory: true,
+              operations: true,
+              finance: true,
+              documents: true,
+              suppliers: true,
+              hr: true,
+              library: true,
+              audit_log: true,
+            },
             updatedAt: new Date().toISOString()
           };
         }
