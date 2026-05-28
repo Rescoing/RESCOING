@@ -267,6 +267,21 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "title", "message", "type", "read"]
+    },
+    "InventoryMovement": {
+      "title": "Inventory Movement",
+      "description": "Log of stock adjustments and movements",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "itemName": { "type": "string" },
+        "type": { "type": "string", "enum": ["in", "out"] },
+        "quantity": { "type": "number" },
+        "reason": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "itemId", "itemName", "type", "quantity"]
     }
   },
   "firestore": {
@@ -341,6 +356,10 @@
     "/notifications/{notificationId}": {
       "schema": "Notification",
       "description": "System alerts and notifications"
+    },
+    "/inventory_movements/{movementId}": {
+      "schema": "InventoryMovement",
+      "description": "Log of stock adjustments and movements"
     }
   }
 }

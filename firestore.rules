@@ -99,7 +99,7 @@ service cloud.firestore {
           'employees', 'suppliers', 'invoices', 'financeProcesses', 
           'financeTasks', 'documents', 'library', 'folioCounters',
           'attendance', 'payrolls', 'purchaseInvoices', 'paymentNotices',
-          'notifications'
+          'notifications', 'inventory_movements'
         ];
       allow update: if isApproved() && (isOwner(existing().ownerId) || isAdmin())
         && incoming().ownerId == existing().ownerId
