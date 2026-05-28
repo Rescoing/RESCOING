@@ -120,7 +120,7 @@ export default function InternalChatWidget() {
 
   // 1. Fetch system users
   useEffect(() => {
-    if (!user || profile?.accessStatus !== 'approved') return;
+    if (!user || (profile?.accessStatus !== 'approved' && profile?.role !== 'admin')) return;
 
     const q = query(
       collection(db, 'users')
@@ -151,7 +151,7 @@ export default function InternalChatWidget() {
 
   // 2. Fetch both Direct messages AND Channel messages real-time
   useEffect(() => {
-    if (!user || profile?.accessStatus !== 'approved') return;
+    if (!user || (profile?.accessStatus !== 'approved' && profile?.role !== 'admin')) return;
 
     const directSentQuery = query(collection(db, 'internal_messages'), where('senderId', '==', user.uid), where('isGroup', '==', false));
     const directRecvQuery = query(collection(db, 'internal_messages'), where('receiverId', '==', user.uid), where('isGroup', '==', false));
@@ -534,20 +534,7 @@ export default function InternalChatWidget() {
             {/* Main body split/toggle */}
             <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
               
-              {profile?.accessStatus !== 'approved' ? (
-                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50 select-none">
-                  <div className="w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 mb-3 animate-pulse border border-amber-200">
-                    <AlertCircle size={26} />
-                  </div>
-                  <h4 className="font-bold text-slate-900 text-sm tracking-tight col-span-2">Acceso Pendiente</h4>
-                  <p className="text-xs text-slate-500 mt-2 max-w-[280px] leading-relaxed">
-                    Tu cuenta está en estado de verificación y debe ser aprobada por el administrador para poder participar en el chat corporativo.
-                  </p>
-                  <div className="mt-4 text-[9px] bg-amber-55/70 border border-amber-200 text-amber-800 px-2.5 py-1 rounded-md font-mono font-bold tracking-wider uppercase">
-                    Estado: {profile?.accessStatus || 'Sin aprobación'}
-                  </div>
-                </div>
-              ) : ((tab === 'channels' && !activeChannelId) || (tab === 'directs' && !activeChatUserId)) ? (
+              {((tab === 'channels' && !activeChannelId) || (tab === 'directs' && !activeChatUserId)) ? (
                 
                 <div className="flex-1 flex flex-col overflow-hidden p-3 gap-2">
                   <div className="relative mb-2 shrink-0">
