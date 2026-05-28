@@ -44,6 +44,7 @@ import LibraryView from './components/LibraryView';
 import AdminUsersView from './components/AdminUsersView';
 import AuditLogView from './components/AuditLogView';
 import { FirebaseProvider, useAuth } from './components/FirebaseProvider';
+import InternalChatWidget from './components/InternalChatWidget';
 import LoginView from './components/LoginView';
 import SettingsModal from './components/SettingsModal';
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, orderBy } from 'firebase/firestore';
@@ -499,6 +500,7 @@ function AppContent() {
         </div>
 
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+        <InternalChatWidget />
       </main>
     </div>
   );

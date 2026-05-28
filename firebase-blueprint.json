@@ -298,6 +298,23 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "userEmail", "action", "entityType", "description"]
+    },
+    "InternalMessage": {
+      "title": "Internal Message",
+      "description": "System internal messages exchanged between users",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderEmail": { "type": "string" },
+        "senderName": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "receiverEmail": { "type": "string" },
+        "content": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "senderId", "senderEmail", "receiverId", "receiverEmail", "content", "read"]
     }
   },
   "firestore": {
@@ -380,6 +397,10 @@
     "/systemLogs/{logId}": {
       "schema": "SystemLog",
       "description": "System auditory logs for important record changes"
+    },
+    "/internal_messages/{messageId}": {
+      "schema": "InternalMessage",
+      "description": "System internal messages exchanged between users"
     }
   }
 }

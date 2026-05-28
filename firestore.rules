@@ -49,7 +49,7 @@ service cloud.firestore {
 
     // --- User Profiles & Company Settings ---
     match /users/{userId} {
-      allow list: if isAdmin();
+      allow list: if isApproved();
       allow get: if isOwner(userId) || isAdmin() || userId == 'invite_' + request.auth.token.email;
       allow delete: if isAdmin() || userId == 'invite_' + request.auth.token.email;
       allow create: if (
@@ -79,6 +79,11 @@ service cloud.firestore {
             ])
           )
         );
+    }
+
+    match /internal_messages/{messageId} {
+      allow create: if isApproved() && (incoming().senderId == request.auth.uid || isAdmin());
+      allow read, list, update, delete: if isApproved() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || isAdmin());
     }
 
     function isValidUserProfile(data) {
