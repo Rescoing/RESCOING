@@ -1,4 +1,4 @@
-export type Module = 'dashboard' | 'crm' | 'inventory' | 'operations' | 'finance' | 'suppliers' | 'hr' | 'library' | 'admin_users' | 'audit_log';
+export type Module = 'dashboard' | 'crm' | 'inventory' | 'operations' | 'finance' | 'accounting' | 'suppliers' | 'hr' | 'library' | 'admin_users' | 'audit_log';
 
 export interface Item {
   id: string;
@@ -299,4 +299,30 @@ export interface SiiDocument {
   ownerId: string;
   createdAt: any;
 }
+
+export interface AccountingEntryItem {
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+}
+
+export interface AccountingEntry {
+  id: string;
+  ownerId: string;
+  folio: number;
+  date: string;
+  glosa: string;
+  items: AccountingEntryItem[];
+  refType?: string;
+  refFolio?: string;
+  createdAt: any;
+}
+
+export interface AccountOption {
+  code: string;
+  name: string;
+  type: 'Activo' | 'Pasivo' | 'Patrimonio' | 'Ingreso' | 'Egreso';
+}
+
 

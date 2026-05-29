@@ -28,7 +28,8 @@ import {
   XCircle,
   Shield,
   Bell,
-  History
+  History,
+  Scale
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Module, Item, Contact, Project, Invoice, Document, Supplier, Employee, FinanceProcess, FinanceTask, RiskPreventionRecord } from './types';
@@ -43,6 +44,7 @@ import HRView from './components/HRView';
 import LibraryView from './components/LibraryView';
 import AdminUsersView from './components/AdminUsersView';
 import AuditLogView from './components/AuditLogView';
+import AccountingView from './components/AccountingView';
 import { FirebaseProvider, useAuth } from './components/FirebaseProvider';
 import InternalChatWidget from './components/InternalChatWidget';
 import LoginView from './components/LoginView';
@@ -146,6 +148,7 @@ function AppContent() {
     { id: 'inventory', label: 'Inventario', icon: Package },
     { id: 'operations', label: 'Operaciones', icon: Briefcase },
     { id: 'finance', label: 'Finanzas y Documentos', icon: BarChart3 },
+    { id: 'accounting', label: 'Contabilidad SII', icon: Scale },
     { id: 'suppliers', label: 'Proveedores', icon: Truck },
     { id: 'hr', label: 'RRHH', icon: UserRound },
     { id: 'library', label: 'Biblioteca', icon: FolderOpen },
@@ -467,6 +470,9 @@ function AppContent() {
                   onModalHandled={() => setAutoOpenModal(false)} 
                   contacts={contacts}
                 />
+              )}
+              {activeModule === 'accounting' && hasPermission('accounting') && (
+                <AccountingView />
               )}
               {activeModule === 'suppliers' && hasPermission('suppliers') && (
                 <SuppliersView />

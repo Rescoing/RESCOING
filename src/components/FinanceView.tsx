@@ -593,6 +593,112 @@ Departamento de Cobranzas / ERP Rescoing`;
     doc.save(`Reporte_Financiero_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
+  const handleDownloadSingleInvoicePDF = (inv: Invoice) => {
+    try {
+      const pdf = new jsPDF() as any;
+      
+      // Header & Primary Color Brand Accent
+      pdf.setFillColor(30, 41, 59); // slate-800
+      pdf.rect(0, 0, 210, 40, 'F');
+      
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(22);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("FACTURA ELECTRÓNICA", 15, 25);
+      
+      // Right Box (Rut Identification Area)
+      pdf.setFillColor(248, 250, 252); // slate-50
+      pdf.setDrawColor(203, 213, 225); // slate-300
+      pdf.rect(140, 8, 62, 24, 'FD');
+      pdf.setTextColor(15, 23, 42); // slate-900
+      pdf.setFontSize(10);
+      pdf.text("R.U.T.: 76.543.210-K", 143, 14);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(`FOLIO: ${inv.siiFolio || inv.id.substring(0, 8).toUpperCase()}`, 143, 22);
+      
+      // Client Details
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("DATOS DEL CLIENTE / RECEPTOR", 15, 50);
+      pdf.setLineWidth(0.5);
+      pdf.setDrawColor(15, 23, 42);
+      pdf.line(15, 52, 195, 52);
+      
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(10);
+      pdf.text(`Cliente: ${inv.client}`, 15, 58);
+      if (inv.rut) {
+        pdf.text(`R.U.T. Cliente: ${inv.rut}`, 15, 64);
+      }
+      pdf.text(`Fecha Emisión: ${inv.date}`, 15, 70);
+      if (inv.dueDate) {
+        pdf.text(`Fecha Vencimiento: ${inv.dueDate}`, 15, 76);
+      }
+      if (inv.paymentMethod) {
+        pdf.text(`Forma de Pago: ${inv.paymentMethod.toUpperCase()}`, 15, 82);
+      }
+      
+      // Items Table / Details
+      pdf.setFont("helvetica", "bold");
+      pdf.text("DETALLES DE LA FACTURACIÓN", 15, 96);
+      pdf.line(15, 98, 195, 98);
+      
+      // Table Header Row
+      pdf.setFillColor(241, 245, 249); // slate-100
+      pdf.rect(15, 102, 180, 8, 'F');
+      pdf.setFontSize(9);
+      pdf.text("DESCRIPCIÓN DE CONCEPTOS", 18, 107);
+      pdf.text("CANT", 130, 107);
+      pdf.text("P. UNITARIO", 150, 107);
+      pdf.text("TOTAL", 178, 107);
+      
+      let currentY = 118;
+      pdf.setFont("helvetica", "normal");
+      
+      // Since Finance invoices are aggregated, we can represent with one primary billing concept row
+      const descriptionConcept = `Servicios de Facturación correspondientes a FAC #${inv.siiFolio || inv.id.substring(0, 8).toUpperCase()}`;
+      pdf.text(descriptionConcept, 18, currentY);
+      pdf.text("1", 132, currentY);
+      pdf.text(`$${inv.netAmount?.toLocaleString()}`, 150, currentY);
+      pdf.text(`$${inv.netAmount?.toLocaleString()}`, 178, currentY);
+      currentY += 12;
+      
+      // Draw totals line
+      pdf.line(15, currentY, 195, currentY);
+      currentY += 8;
+      
+      // Calculations Box
+      pdf.setFontSize(10);
+      pdf.text("Neto afecto (19%):", 135, currentY);
+      pdf.text(`$${inv.netAmount?.toLocaleString()}`, 175, currentY);
+      currentY += 6;
+      pdf.text("I.V.A. (19%):", 135, currentY);
+      pdf.text(`$${inv.iva?.toLocaleString()}`, 175, currentY);
+      currentY += 6;
+      pdf.setFont("helvetica", "bold");
+      pdf.text("TOTAL GENERAL:", 135, currentY);
+      pdf.text(`$${inv.totalAmount?.toLocaleString()}`, 175, currentY);
+      
+      // Footer text or Signature Area
+      currentY += 25;
+      pdf.setDrawColor(226, 232, 240); // slate-200
+      pdf.setLineWidth(0.2);
+      pdf.line(20, currentY + 15, 80, currentY + 15);
+      pdf.line(125, currentY + 15, 185, currentY + 15);
+      
+      pdf.setFontSize(8);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(148, 163, 184); // slate-400
+      pdf.text("Firma Responsable Emitente", 35, currentY + 20);
+      pdf.text("Firma Cliente / Receptor", 145, currentY + 20);
+      
+      pdf.save(`Factura_${inv.siiFolio || inv.id.substring(0, 8).toUpperCase()}.pdf`);
+    } catch (err) {
+      console.error("Error generating invoice PDF:", err);
+    }
+  };
+
   const totalBilling = invoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
   const totalPaid = invoices.filter(i => i.status === 'Pagado').reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
   const totalPending = invoices.filter(i => i.status === 'Pendiente').reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
@@ -970,7 +1076,12 @@ Departamento de Cobranzas / ERP Rescoing`;
                               <span className="font-mono font-bold text-slate-900">${inv.totalAmount?.toLocaleString()}</span>
                             </div>
                             <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline cursor-pointer">PDF</button>
+                              <button 
+                                onClick={() => handleDownloadSingleInvoicePDF(inv)}
+                                className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline cursor-pointer"
+                              >
+                                PDF
+                              </button>
                               {inv.status !== 'Pagado' && (
                                 <button 
                                   onClick={() => openAlertModal(inv)}

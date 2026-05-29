@@ -337,6 +337,22 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "type", "folio", "clientName", "totalAmount", "status"]
+    },
+    "AccountingEntry": {
+      "title": "Accounting Entry",
+      "description": "Chronological accounting journal entry required by SII Chile",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "folio": { "type": "number" },
+        "date": { "type": "string" },
+        "glosa": { "type": "string" },
+        "items": { "type": "array" },
+        "refType": { "type": "string" },
+        "refFolio": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "folio", "date", "glosa", "items"]
     }
   },
   "firestore": {
@@ -427,6 +443,10 @@
     "/siiDocuments/{siiDocId}": {
       "schema": "SiiDocument",
       "description": "Documentos tributarios SII de ajuste (NC, ND, Guías, etc.)"
+    },
+    "/accountingEntries/{entryId}": {
+      "schema": "AccountingEntry",
+      "description": "Chilean SII compliant accounting entries (Libro Diario)"
     }
   }
 }

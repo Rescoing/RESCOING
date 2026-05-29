@@ -32,6 +32,7 @@ const MODULES = [
   { id: 'inventory', label: 'Inventario' },
   { id: 'operations', label: 'Operaciones' },
   { id: 'finance', label: 'Finanzas y Documentos' },
+  { id: 'accounting', label: 'Contabilidad SII' },
   { id: 'suppliers', label: 'Proveedores' },
   { id: 'hr', label: 'RRHH' },
   { id: 'library', label: 'Biblioteca' },
