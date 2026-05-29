@@ -36,11 +36,25 @@ const DOCUMENT_TYPES = [
   { id: 'payment_status', label: 'Estado de Pago', icon: CheckCircle2, prefix: 'EP' },
 ];
 
-export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
+export default function DocumentsView({ 
+  contacts, 
+  hideHeader = false, 
+  initialTab 
+}: { 
+  contacts: Contact[]; 
+  hideHeader?: boolean; 
+  initialTab?: Document['type']; 
+}) {
   const { user } = useAuth();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<Document['type']>('quotation');
+  const [activeTab, setActiveTab] = useState<Document['type']>(initialTab || 'quotation');
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [rutLookup, setRutLookup] = useState('');
@@ -388,41 +402,45 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
   );
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900">Módulo de Documentos</h2>
-          <p className="text-slate-500 mt-1">Gestión integral de toda la documentación mercantil de RESCOING.</p>
-        </div>
-        <button 
-          onClick={() => { resetForm(); setIsModalOpen(true); }}
-          className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:opacity-90 active:scale-95 transition-all"
-        >
-          <Plus size={18} />
-          Nuevo {DOCUMENT_TYPES.find(t => t.id === activeTab)?.label}
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-px">
-        {DOCUMENT_TYPES.map((type) => (
-          <button
-            key={type.id}
-            onClick={() => setActiveTab(type.id as any)}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-bold transition-all relative
-              ${activeTab === type.id ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}
-            `}
+    <div className="space-y-6">
+      {!hideHeader && (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight text-slate-900">Módulo de Documentos</h2>
+            <p className="text-slate-500 mt-1">Gestión integral de toda la documentación mercantil de RESCOING.</p>
+          </div>
+          <button 
+            onClick={() => { resetForm(); setIsModalOpen(true); }}
+            className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:opacity-90 active:scale-95 transition-all"
           >
-            <type.icon size={18} />
-            {type.label}
-            {activeTab === type.id && (
-              <motion.div 
-                layoutId="activeTabDoc"
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"
-              />
-            )}
+            <Plus size={18} />
+            Nuevo {DOCUMENT_TYPES.find(t => t.id === activeTab)?.label}
           </button>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {!hideHeader && (
+        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-px">
+          {DOCUMENT_TYPES.map((type) => (
+            <button
+              key={type.id}
+              onClick={() => setActiveTab(type.id as any)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-bold transition-all relative
+                ${activeTab === type.id ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}
+              `}
+            >
+              <type.icon size={18} />
+              {type.label}
+              {activeTab === type.id && (
+                <motion.div 
+                  layoutId="activeTabDoc"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"
+                />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row gap-4">
         <div className="relative flex-1">
@@ -435,10 +453,21 @@ export default function DocumentsView({ contacts }: { contacts: Contact[] }) {
             onChange={e => setSearchTerm(e.target.value)}
           />
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors text-sm font-medium">
-          <Filter size={18} />
-          Filtrar
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors text-sm font-medium">
+            <Filter size={18} />
+            Filtrar
+          </button>
+          {hideHeader && (
+            <button 
+              onClick={() => { resetForm(); setIsModalOpen(true); }}
+              className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:opacity-90 active:scale-95 transition-all"
+            >
+              <Plus size={18} />
+              Nuevo {DOCUMENT_TYPES.find(t => t.id === activeTab)?.label}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

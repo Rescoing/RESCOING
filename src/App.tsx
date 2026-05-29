@@ -145,8 +145,7 @@ function AppContent() {
     { id: 'crm', label: 'CRM / Ventas', icon: Users },
     { id: 'inventory', label: 'Inventario', icon: Package },
     { id: 'operations', label: 'Operaciones', icon: Briefcase },
-    { id: 'finance', label: 'Finanzas', icon: BarChart3 },
-    { id: 'documents', label: 'Documentos', icon: FileText },
+    { id: 'finance', label: 'Finanzas y Documentos', icon: BarChart3 },
     { id: 'suppliers', label: 'Proveedores', icon: Truck },
     { id: 'hr', label: 'RRHH', icon: UserRound },
     { id: 'library', label: 'Biblioteca', icon: FolderOpen },
@@ -466,10 +465,8 @@ function AppContent() {
                 <FinanceView 
                   autoOpen={autoOpenModal} 
                   onModalHandled={() => setAutoOpenModal(false)} 
+                  contacts={contacts}
                 />
-              )}
-              {activeModule === 'documents' && hasPermission('documents') && (
-                <DocumentsView contacts={contacts} />
               )}
               {activeModule === 'suppliers' && hasPermission('suppliers') && (
                 <SuppliersView />

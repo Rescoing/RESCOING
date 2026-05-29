@@ -22,7 +22,9 @@ import {
   Mail,
   Send,
   Loader2,
-  Check
+  Check,
+  ShoppingCart,
+  Ticket
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Invoice, FinanceProcess, FinanceTask, PurchaseInvoice, Payroll, Document, SiiDocument } from '../types';
@@ -34,12 +36,29 @@ import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTim
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
 
-type FinanceTab = 'billing' | 'sii_documents' | 'flow' | 'reminders' | 'balance';
+import DocumentsView from './DocumentsView';
+import { Contact } from '../types';
+
+type FinanceTab = 
+  | 'billing' 
+  | 'sii_documents' 
+  | 'quotation' 
+  | 'purchase_order' 
+  | 'sales_note' 
+  | 'payment_status' 
+  | 'flow' 
+  | 'reminders' 
+  | 'balance';
 
 export default function FinanceView({ 
   autoOpen, 
-  onModalHandled 
-}: { autoOpen?: boolean; onModalHandled?: () => void }) {
+  onModalHandled,
+  contacts = []
+}: { 
+  autoOpen?: boolean; 
+  onModalHandled?: () => void;
+  contacts?: Contact[];
+}) {
   const { user } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -747,31 +766,68 @@ Departamento de Cobranzas / ERP Rescoing`;
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 gap-8 overflow-x-auto">
-        {[
-          { id: 'billing', label: 'Facturación / Invoices', icon: FileCheck },
-          { id: 'sii_documents', label: 'Documentos SII Chile', icon: FileText },
-          { id: 'flow', label: 'Seguimiento de Flujo', icon: Activity },
-          { id: 'reminders', label: 'Remanentes y Cobranza', icon: Bell },
-          { id: 'balance', label: 'Balance Real (Gasto v/s Ingreso)', icon: TrendingUp },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as FinanceTab)}
-            className={`pb-4 text-sm font-bold uppercase tracking-widest flex items-center gap-2 transition-all relative
-              ${activeTab === tab.id ? 'text-primary' : 'text-slate-400 hover:text-slate-600'}
-            `}
-          >
-            <tab.icon size={16} />
-            {tab.label}
-            {activeTab === tab.id && (
-              <motion.div 
-                layoutId="finance-tab"
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
-              />
-            )}
-          </button>
-        ))}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4 font-sans">
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Módulos Unificados de Finanzas y Control Comercial</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[
+            {
+              id: 'billing_sii',
+              label: 'Impuestos y Facturación',
+              description: 'Facturas mercantiles y de ajuste oficial SII Chile',
+              tabs: [
+                { id: 'billing', label: 'Facturas de Venta', icon: FileCheck },
+                { id: 'sii_documents', label: 'Doctos. Ajuste SII', icon: FileText }
+              ]
+            },
+            {
+              id: 'mercantile_docs',
+              label: 'Documentos de Comercio',
+              description: 'Cotizaciones, notas de venta, órdenes de compra y estados de pago',
+              tabs: [
+                { id: 'quotation', label: 'Cotizaciones (COT)', icon: FileText },
+                { id: 'sales_note', label: 'Notas de Venta (NV)', icon: Ticket },
+                { id: 'purchase_order', label: 'Órdenes de Compra (OC)', icon: ShoppingCart },
+                { id: 'payment_status', label: 'Estados de Pago (EP)', icon: CheckCircle2 }
+              ]
+            },
+            {
+              id: 'analytics_flows',
+              label: 'Flujos, Alertas y Tesorería',
+              description: 'Seguimiento de procesos, cobaltos, alertas y balance consolidado',
+              tabs: [
+                { id: 'flow', label: 'Procesos de Flujo', icon: Activity },
+                { id: 'reminders', label: 'Cobranza y Alertas', icon: Bell },
+                { id: 'balance', label: 'Balance Real (Ing/Gas)', icon: TrendingUp }
+              ]
+            }
+          ].map(category => (
+            <div key={category.id} className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col justify-between">
+              <div className="mb-3">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">{category.label}</h4>
+                <p className="text-[10px] text-slate-400 mt-0.5 max-w-[250px] leading-tight">{category.description}</p>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200/40">
+                {category.tabs.map(tab => {
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id as FinanceTab)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all relative cursor-pointer ${
+                        isActive 
+                          ? 'bg-primary text-white shadow-sm font-black' 
+                          : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/60'
+                      }`}
+                    >
+                      <tab.icon size={12} />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <AnimatePresence mode="wait">
@@ -1113,6 +1169,54 @@ Departamento de Cobranzas / ERP Rescoing`;
                 </table>
               </div>
             </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'quotation' && (
+          <motion.div 
+            key="quotation"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="space-y-4"
+          >
+            <DocumentsView contacts={contacts} hideHeader={true} initialTab="quotation" />
+          </motion.div>
+        )}
+
+        {activeTab === 'purchase_order' && (
+          <motion.div 
+            key="purchase_order"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="space-y-4"
+          >
+            <DocumentsView contacts={contacts} hideHeader={true} initialTab="purchase_order" />
+          </motion.div>
+        )}
+
+        {activeTab === 'sales_note' && (
+          <motion.div 
+            key="sales_note"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="space-y-4"
+          >
+            <DocumentsView contacts={contacts} hideHeader={true} initialTab="sales_note" />
+          </motion.div>
+        )}
+
+        {activeTab === 'payment_status' && (
+          <motion.div 
+            key="payment_status"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="space-y-4"
+          >
+            <DocumentsView contacts={contacts} hideHeader={true} initialTab="payment_status" />
           </motion.div>
         )}
 

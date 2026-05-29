@@ -1,4 +1,4 @@
-export type Module = 'dashboard' | 'crm' | 'inventory' | 'operations' | 'finance' | 'documents' | 'suppliers' | 'hr' | 'library' | 'admin_users' | 'audit_log';
+export type Module = 'dashboard' | 'crm' | 'inventory' | 'operations' | 'finance' | 'suppliers' | 'hr' | 'library' | 'admin_users' | 'audit_log';
 
 export interface Item {
   id: string;
