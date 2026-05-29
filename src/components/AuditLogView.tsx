@@ -360,8 +360,13 @@ export default function AuditLogView() {
         })
       });
 
+      let errorMsg = '';
       if (!response.ok) {
-        throw new Error('El servidor de auditoría IA devolvió un error de comunicación.');
+        try {
+          const errData = await response.json();
+          errorMsg = errData.error || errData.message || '';
+        } catch (jsonErr) {}
+        throw new Error(errorMsg || 'El servidor de auditoría IA devolvió un error de comunicación.');
       }
 
       const data = await response.json();

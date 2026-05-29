@@ -39,8 +39,35 @@ async function startServer() {
       const client = getGeminiClient();
       const { systemContext, prompt, history } = req.body;
 
-      const chat = client.chats.create({
+      const contents: any[] = [];
+
+      // Safely build the conversation history matching @google/genai schema
+      if (history && Array.isArray(history)) {
+        history.forEach((h: any) => {
+          // Skip the initial system greetings or empty messages to avoid bloating the sequence
+          if (h.id === 'welcome' || !h.text) return;
+          contents.push({
+            role: h.role === 'user' ? 'user' : 'model',
+            parts: [{ text: h.text }]
+          });
+        });
+      }
+
+      // Add context with the current query as the final user message
+      const promptWithContext = `CONTEXTO REAL SINCRO DE LA EMPRESA (Tus ojos de Auditoría):
+${JSON.stringify(systemContext, null, 2)}
+
+NUEVA CONSULTA / SOLICITUD DE AUDITORÍA:
+${prompt}`;
+
+      contents.push({
+        role: 'user',
+        parts: [{ text: promptWithContext }]
+      });
+
+      const response = await client.models.generateContent({
         model: "gemini-3.5-flash",
+        contents,
         config: {
           systemInstruction: `Eres "Auditoría-AI Match", un consultor inteligente de auditoría y cumplimiento contable, tributario y operacional para empresas en Chile. Tu rol es auditar los datos transaccionales, financieros, tributarios (F29, F22 Renta) e inventarios provistos, buscando descuadres, riesgos tributarios de acuerdo al Servicio de Impuestos Internos (SII) de Chile y brindando soluciones accionables para corregirlos.
           
@@ -54,14 +81,7 @@ async function startServer() {
         }
       });
 
-      const promptWithContext = `CONTEXTO REAL SINCRO DE LA EMPRESA (Tus ojos de Auditoría):
-${JSON.stringify(systemContext, null, 2)}
-
-NUEVA CONSULTA / SOLICITUD DE AUDITORÍA:
-${prompt}`;
-
-      const gRes = await chat.sendMessage({ message: promptWithContext });
-      res.json({ text: gRes.text });
+      res.json({ text: response.text });
     } catch (error: any) {
       console.error("Gemini server audit route error:", error);
       res.status(500).json({ error: error.message || "Error al procesar la auditoría con Inteligencia Artificial." });
