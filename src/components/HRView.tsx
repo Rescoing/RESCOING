@@ -765,8 +765,8 @@ export default function HRView() {
                           </button>
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600 capitalize">{p.month} {p.year}</td>
-                        <td className="px-6 py-4 text-sm font-mono">${emp?.salary.toLocaleString()}</td>
-                        <td className="px-6 py-4 text-sm font-mono font-bold text-emerald-600">${p.netPay.toLocaleString()}</td>
+                        <td className="px-6 py-4 text-sm font-mono">${(emp?.salary || 0).toLocaleString()}</td>
+                        <td className="px-6 py-4 text-sm font-mono font-bold text-emerald-600">${(p.netPay || 0).toLocaleString()}</td>
                         <td className="px-6 py-4">
                           <span className="px-2 py-0.5 text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full uppercase">PAGADO</span>
                         </td>

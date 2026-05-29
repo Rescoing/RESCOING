@@ -428,8 +428,8 @@ export default function AuditLogView() {
   
   // 1. Double Entry Bookkeeping Balance Check
   const unbalancedEntriesList = entries.filter(entry => {
-    const totalDebit = entry.items.reduce((sum, item) => sum + (Number(item.debit) || 0), 0);
-    const totalCredit = entry.items.reduce((sum, item) => sum + (Number(item.credit) || 0), 0);
+    const totalDebit = (entry.items || []).reduce((sum, item) => sum + (Number(item.debit) || 0), 0);
+    const totalCredit = (entry.items || []).reduce((sum, item) => sum + (Number(item.credit) || 0), 0);
     return Math.abs(totalDebit - totalCredit) > 1; // Tolerance threshold
   });
   const totalEntriesChecked = entries.length;
@@ -441,8 +441,10 @@ export default function AuditLogView() {
   
   // Total Credit from ledger account codes '5-01-001' (Ingresos por Ventas) or containing "Venta"
   const accountingSalesRevenue = entries.reduce((sum, entry) => {
-    return sum + entry.items.reduce((subSum, item) => {
-      const isRevenueAcct = item.accountCode === '5-01-001' || item.accountName.toLowerCase().includes('venta') || item.accountName.toLowerCase().includes('ingreso');
+    return sum + (entry.items || []).reduce((subSum, item) => {
+      const isRevenueAcct = item.accountCode === '5-01-001' || 
+        (item.accountName || '').toLowerCase().includes('venta') || 
+        (item.accountName || '').toLowerCase().includes('ingreso');
       if (isRevenueAcct) {
         return subSum + ((Number(item.credit) || 0) - (Number(item.debit) || 0));
       }
@@ -459,8 +461,12 @@ export default function AuditLogView() {
 
   // Total Debit from cost/merchandise accounts (start with '5-02', '5-01-004' Cost of Goods, or contain "compra" or "mercader")
   const accountingCostValue = entries.reduce((sum, entry) => {
-    return sum + entry.items.reduce((subSum, item) => {
-      const isCostAcct = item.accountCode === '5-01-004' || item.accountCode.startsWith('5-02') || item.accountName.toLowerCase().includes('compra') || item.accountName.toLowerCase().includes('costo') || item.accountName.toLowerCase().includes('mercader');
+    return sum + (entry.items || []).reduce((subSum, item) => {
+      const isCostAcct = item.accountCode === '5-01-004' || 
+        (item.accountCode || '').startsWith('5-02') || 
+        (item.accountName || '').toLowerCase().includes('compra') || 
+        (item.accountName || '').toLowerCase().includes('costo') || 
+        (item.accountName || '').toLowerCase().includes('mercader');
       if (isCostAcct) {
         return subSum + ((Number(item.debit) || 0) - (Number(item.credit) || 0));
       }
@@ -476,8 +482,11 @@ export default function AuditLogView() {
   
   // Total Debit from salary ledger codes starts with '5-01-002', name containing sueldo, payroll, personal, remuneracion
   const accountingPayrollExpense = entries.reduce((sum, entry) => {
-    return sum + entry.items.reduce((subSum, item) => {
-      const isPayrollAcct = item.accountCode === '5-01-002' || item.accountName.toLowerCase().includes('sueldo') || item.accountName.toLowerCase().includes('remuner') || item.accountName.toLowerCase().includes('personal');
+    return sum + (entry.items || []).reduce((subSum, item) => {
+      const isPayrollAcct = item.accountCode === '5-01-002' || 
+        (item.accountName || '').toLowerCase().includes('sueldo') || 
+        (item.accountName || '').toLowerCase().includes('remuner') || 
+        (item.accountName || '').toLowerCase().includes('personal');
       if (isPayrollAcct) {
         return subSum + ((Number(item.debit) || 0) - (Number(item.credit) || 0));
       }
@@ -852,7 +861,7 @@ export default function AuditLogView() {
                         </div>
                         <p className="text-[10px] text-slate-500 italic max-w-full truncate">{entry.glosa || 'Sin glosa descriptiva'}</p>
                         <div className="text-[10px] bg-rose-50 border border-rose-100 text-rose-700 text-center font-bold font-mono p-1 rounded mt-1">
-                          Deb: ${entry.items.reduce((as, ai) => as + (Number(ai.debit)||0),0).toLocaleString()} | Cred: ${entry.items.reduce((as, ai) => as + (Number(ai.credit)||0),0).toLocaleString()}
+                          Deb: ${(entry.items || []).reduce((as, ai) => as + (Number(ai.debit)||0),0).toLocaleString()} | Cred: ${(entry.items || []).reduce((as, ai) => as + (Number(ai.credit)||0),0).toLocaleString()}
                         </div>
                       </div>
                     ))}

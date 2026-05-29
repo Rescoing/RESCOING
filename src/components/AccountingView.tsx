@@ -129,7 +129,7 @@ export default function AccountingView() {
     const unsubEntries = onSnapshot(qEntries, (snapshot) => {
       const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AccountingEntry));
       // Sort by date then folio descending
-      fetched.sort((a, b) => b.date.localeCompare(a.date) || b.folio - a.folio);
+      fetched.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.folio || 0) - (a.folio || 0));
       setEntries(fetched);
     }, (err) => {
       console.error("Error fetching accounting entries:", err);
@@ -361,13 +361,15 @@ export default function AccountingView() {
 
     // 2. Accumulate all entry amounts
     entries.forEach(entry => {
-      entry.items.forEach(item => {
-        if (!accountSumMap[item.accountCode]) {
-          // If custom account wasn't pre-loaded, add dynamically
-          accountSumMap[item.accountCode] = { debit: 0, credit: 0 };
+      (entry.items || []).forEach(item => {
+        if (item && item.accountCode) {
+          if (!accountSumMap[item.accountCode]) {
+            // If custom account wasn't pre-loaded, add dynamically
+            accountSumMap[item.accountCode] = { debit: 0, credit: 0 };
+          }
+          accountSumMap[item.accountCode].debit += item.debit || 0;
+          accountSumMap[item.accountCode].credit += item.credit || 0;
         }
-        accountSumMap[item.accountCode].debit += item.debit || 0;
-        accountSumMap[item.accountCode].credit += item.credit || 0;
       });
     });
 
@@ -480,10 +482,10 @@ export default function AccountingView() {
   // Export Libro Diario to structured Excel for SII electronic audits
   const handleExportDiarioExcel = () => {
     // Sort chronological entries to guarantee alignment with correlative numbering
-    const sortedEntries = [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.folio - b.folio);
+    const sortedEntries = [...entries].sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.folio || 0) - (b.folio || 0));
 
     const diarioRows = sortedEntries.flatMap(entry => {
-      return entry.items.map(item => ({
+      return (entry.items || []).map(item => ({
         'Número de Asiento (Correlativo)': entry.folio,
         'Fecha de Contabilización (AAAA-MM-DD)': entry.date,
         'Glosa del Asiento (Concepto)': entry.glosa,
@@ -520,11 +522,13 @@ export default function AccountingView() {
   // Export Libro Mayor to structured Excel for SII electronic audits
   const handleExportLedgerExcel = () => {
     // Sort chronological entries
-    const sortedEntries = [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.folio - b.folio);
+    const sortedEntries = [...entries].sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.folio || 0) - (b.folio || 0));
 
     // Collect all active and defined account codes
     const activeCodes = new Set<string>();
-    sortedEntries.forEach(e => e.items.forEach(item => activeCodes.add(item.accountCode)));
+    sortedEntries.forEach(e => (e.items || []).forEach(item => {
+      if (item && item.accountCode) activeCodes.add(item.accountCode);
+    }));
     const allCodes = Array.from(new Set([...chartOfAccounts.map(a => a.code), ...Array.from(activeCodes)]));
     allCodes.sort(); // Alphanumeric sort
 
@@ -535,8 +539,8 @@ export default function AccountingView() {
       
       const movements: { entry: AccountingEntry; item: AccountingEntryItem }[] = [];
       sortedEntries.forEach(entry => {
-        entry.items.forEach(item => {
-          if (item.accountCode === code) {
+        (entry.items || []).forEach(item => {
+          if (item && item.accountCode === code) {
             movements.push({ entry, item });
           }
         });
@@ -627,7 +631,8 @@ export default function AccountingView() {
         pdf.text(`FOLIO CONTABLE #${e.folio} | Fecha: ${e.date} | Glosa: ${e.glosa}`, 17, currentY + 6);
         currentY += 12;
 
-        e.items.forEach(item => {
+        (e.items || []).forEach(item => {
+          if (!item) return;
           if (currentY > 260) {
             pdf.addPage();
             currentY = 20;
@@ -635,14 +640,14 @@ export default function AccountingView() {
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(71, 85, 105);
           
-          if (item.debit > 0) {
-            pdf.text(`${item.accountCode} - ${item.accountName}`, 20, currentY);
-            pdf.text(`$${item.debit.toLocaleString()}`, 130, currentY);
+          if ((item.debit || 0) > 0) {
+            pdf.text(`${item.accountCode || ''} - ${item.accountName || ''}`, 20, currentY);
+            pdf.text(`$${(item.debit || 0).toLocaleString()}`, 130, currentY);
             pdf.text("---", 170, currentY);
           } else {
-            pdf.text(`    ${item.accountCode} - ${item.accountName}`, 25, currentY);
+            pdf.text(`    ${item.accountCode || ''} - ${item.accountName || ''}`, 25, currentY);
             pdf.text("---", 130, currentY);
-            pdf.text(`$${item.credit.toLocaleString()}`, 170, currentY);
+            pdf.text(`$${(item.credit || 0).toLocaleString()}`, 170, currentY);
           }
           currentY += 7;
         });
@@ -689,8 +694,8 @@ export default function AccountingView() {
   // 4. PPM Credit (from accounting entries mapped on PPM '1-01-006' or '5-01-004' accounts)
   const f22ComputedPpm = entries.reduce((sum, entry) => {
     let entryPpm = 0;
-    entry.items.forEach(item => {
-      if (item.accountCode === '1-01-006' || item.accountCode === '5-01-004') {
+    (entry.items || []).forEach(item => {
+      if (item && (item.accountCode === '1-01-006' || item.accountCode === '5-01-004')) {
         entryPpm += (item.debit || 0);
       }
     });
@@ -1084,10 +1089,15 @@ export default function AccountingView() {
                       .filter(e => {
                         const q = searchQuery.toLowerCase();
                         return (
-                          e.glosa.toLowerCase().includes(q) ||
-                          e.folio.toString().includes(q) ||
-                          e.date.includes(q) ||
-                          e.items.some(item => item.accountName.toLowerCase().includes(q) || item.accountCode.includes(q))
+                          (e.glosa || '').toLowerCase().includes(q) ||
+                          (e.folio || '').toString().includes(q) ||
+                          (e.date || '').includes(q) ||
+                          (e.items || []).some(item => 
+                            item && (
+                              (item.accountName || '').toLowerCase().includes(q) || 
+                              (item.accountCode || '').includes(q)
+                            )
+                          )
                         );
                       })
                       .map(entry => (
@@ -1106,7 +1116,7 @@ export default function AccountingView() {
                           </td>
                           <td className="px-6 py-4">
                             <div className="space-y-1 bg-slate-50/30 p-2 rounded-lg border border-slate-100">
-                              {entry.items.map((item, idx) => (
+                              {(entry.items || []).map((item, idx) => (
                                 <div key={idx} className="flex items-center justify-between font-mono text-[10px]">
                                   <span className={`${item.credit > 0 ? 'pl-4 text-slate-500' : 'font-bold text-slate-700'}`}>
                                     {item.accountCode} - {item.accountName}
