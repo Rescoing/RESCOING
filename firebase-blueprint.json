@@ -315,6 +315,28 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "senderId", "senderEmail", "receiverId", "receiverEmail", "content", "read"]
+    },
+    "SiiDocument": {
+      "title": "SII Document",
+      "description": "Documentos tributarios oficiales SII Chile (Nota Credito, Debito, Guia Despacho)",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "type": { "type": "string" },
+        "folio": { "type": "string" },
+        "clientName": { "type": "string" },
+        "date": { "type": "string" },
+        "netAmount": { "type": "number" },
+        "iva": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "relatedInvoiceId": { "type": "string" },
+        "relatedInvoiceFolio": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["emitid", "emitido", "nulo"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "type", "folio", "clientName", "totalAmount", "status"]
     }
   },
   "firestore": {
@@ -401,6 +423,10 @@
     "/internal_messages/{messageId}": {
       "schema": "InternalMessage",
       "description": "System internal messages exchanged between users"
+    },
+    "/siiDocuments/{siiDocId}": {
+      "schema": "SiiDocument",
+      "description": "Documentos tributarios SII de ajuste (NC, ND, Guías, etc.)"
     }
   }
 }
