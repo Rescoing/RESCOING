@@ -142,6 +142,9 @@ Departamento de Cobranzas / ERP Rescoing`;
 
     let submitSuccess = false;
     try {
+      const formattedSubject = `⚠️ ERP ALERTA PAGO: [Destinatario: ${alertRecipientEmail}] - ${alertSubject.replace('⚠️ ERP ALERTA DE PAGO: ', '')}`;
+      const formattedMessage = `=== ENVIADO DESDE EL ERP PARA CLIENTE: ${alertRecipientEmail || 'No Definido'} ===\n\n${alertMessage}`;
+
       const response = await fetch('https://api.web3forms.com/submit', {
         method: 'POST',
         headers: {
@@ -151,10 +154,10 @@ Departamento de Cobranzas / ERP Rescoing`;
         body: JSON.stringify({
           access_key: '62df9ff2-6eac-4e4b-97fc-c999cb5038c3',
           name: 'Notificaciones Cobranza ERP',
-          email: 'notificaciones@escoing.com',
-          to_email: alertRecipientEmail || 'rescoing@gmail.com',
-          subject: alertSubject,
-          message: alertMessage
+          email: user.email || 'rescoing@gmail.com', // Aligning SPF/DMARC with registered account
+          replyto: alertRecipientEmail || 'rescoing@gmail.com',
+          subject: formattedSubject,
+          message: formattedMessage
         })
       });
 
@@ -1753,7 +1756,9 @@ Departamento de Cobranzas / ERP Rescoing`;
                 value={alertRecipientEmail} 
                 onChange={e => setAlertRecipientEmail(e.target.value)}
               />
-              <p className="text-[10px] text-slate-400 font-medium italic mt-1">Extraído automáticamente desde la ficha del cliente en el CRM o ingresado manualmente.</p>
+              <p className="text-[10px] text-indigo-600 font-semibold italic mt-1">
+                Nota: Por limitaciones del plan gratuito de Web3Forms, toda alerta llegará directamente a tu correo registrado (rescoing@gmail.com) para pruebas, incluyendo los datos del destinatario ({alertRecipientEmail}) en el cuerpo y asunto del correo.
+              </p>
             </div>
 
             <div>

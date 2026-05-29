@@ -194,7 +194,7 @@ Notificación automática emitida por el Sistema ERP.
         body: JSON.stringify({
           access_key: '62df9ff2-6eac-4e4b-97fc-c999cb5038c3',
           name: 'Notificaciones ERP',
-          email: 'notificaciones@escoing.com',
+          email: user?.email || 'rescoing@gmail.com', // Aligning SPF/DMARC with registered account
           to_email: 'rescoing@gmail.com',
           subject: `📆 ERP AVISO DE PAGO: ${selectedSupplier.name} ($${selectedInvoice.totalAmount?.toLocaleString()})`,
           message: emailMessage
