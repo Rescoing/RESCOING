@@ -121,9 +121,9 @@ export default function AuditLogView() {
     setSalesSuccessMsg('');
     try {
       const nextFolio = entries.length > 0 ? Math.max(...entries.map(e => e.folio || 0)) + 1 : 1;
-      const net = totalInvoicedSalesNet > 0 ? totalInvoicedSalesNet : 15000;
-      const iva = totalInvoicedSalesVat > 0 ? totalInvoicedSalesVat : 2850;
-      const total = net + iva;
+      const netToPost = salesDiscrepancyAmount > 0 ? salesDiscrepancyAmount : (totalInvoicedSalesNet > 0 ? totalInvoicedSalesNet : 15000);
+      const iva = Math.round(netToPost * 0.19);
+      const total = netToPost + iva;
 
       const payload = {
         ownerId: user.uid,
@@ -136,7 +136,7 @@ export default function AuditLogView() {
         items: [
           { accountCode: '1-01-003', accountName: 'Clientes Nacionales', debit: total, credit: 0 },
           { accountCode: '2-01-002', accountName: 'IVA Débito Fiscal', debit: 0, credit: iva },
-          { accountCode: '4-01-001', accountName: 'Ingresos por Ventas / Servicios', debit: 0, credit: net }
+          { accountCode: '4-01-001', accountName: 'Ingresos por Ventas / Servicios', debit: 0, credit: netToPost }
         ]
       };
 
@@ -170,9 +170,9 @@ export default function AuditLogView() {
     setPurchasesSuccessMsg('');
     try {
       const nextFolio = entries.length > 0 ? Math.max(...entries.map(e => e.folio || 0)) + 1 : 1;
-      const net = totalBilledPurchasesNet > 0 ? totalBilledPurchasesNet : 100000;
-      const iva = totalBilledPurchasesVat > 0 ? totalBilledPurchasesVat : 19000;
-      const total = net + iva;
+      const netToPost = purchaseDiscrepancyAmount > 0 ? purchaseDiscrepancyAmount : (totalBilledPurchasesNet > 0 ? totalBilledPurchasesNet : 100000);
+      const iva = Math.round(netToPost * 0.19);
+      const total = netToPost + iva;
 
       const payload = {
         ownerId: user.uid,
@@ -183,7 +183,7 @@ export default function AuditLogView() {
         refFolio: 'CENT-COMPRAS',
         createdAt: new Date().toISOString(),
         items: [
-          { accountCode: '5-01-002', accountName: 'Gastos de Administración', debit: net, credit: 0 },
+          { accountCode: '5-01-004', accountName: 'Costos de Operación y Compra Directa', debit: netToPost, credit: 0 },
           { accountCode: '1-01-004', accountName: 'IVA Crédito Fiscal', debit: iva, credit: 0 },
           { accountCode: '2-01-001', accountName: 'Proveedores Nacionales', debit: 0, credit: total }
         ]
@@ -241,31 +241,57 @@ export default function AuditLogView() {
         employeeName = "Carlos Mendoza Silva";
       }
 
-      const payrollPayload = {
-        ownerId: user.uid,
-        employeeId: selectedEmpId,
-        employeeName: employeeName,
-        month: "Mayo",
-        year: 2026,
-        baseSalary: 125000,
-        gratification: 31250,
-        transport: 10000,
-        lunch: 15000,
-        bonuses: 0,
-        overtime: 0,
-        netPay: 100000,
-        status: "Firmado",
-        createdAt: new Date().toISOString()
-      };
+      // Reconcile by creating or matching payroll discrepancy
+      const discrepancy = payrollDiscrepancyAmount > 0 ? payrollDiscrepancyAmount : 100000;
+      
+      if (accountingPayrollExpense > totalWagesPaidNet || totalWagesPaidNet === 0) {
+        // Missing support documents in HR
+        const baseSalaryVal = Math.round(discrepancy / 1.25);
+        const gratificationVal = discrepancy - baseSalaryVal;
 
-      await addDoc(collection(db, 'payrolls'), payrollPayload);
+        const payrollPayload = {
+          ownerId: user.uid,
+          employeeId: selectedEmpId,
+          employeeName: employeeName,
+          month: "Mayo",
+          year: 2026,
+          baseSalary: baseSalaryVal,
+          gratification: gratificationVal,
+          transport: 10000,
+          lunch: 15000,
+          bonuses: 0,
+          overtime: 0,
+          netPay: discrepancy,
+          status: "Firmado",
+          createdAt: new Date().toISOString()
+        };
+
+        await addDoc(collection(db, 'payrolls'), payrollPayload);
+      } else {
+        // Missing general ledger entries in Accounting
+        const nextFolio = entries.length > 0 ? Math.max(...entries.map(e => e.folio || 0)) + 1 : 1;
+        const entryPayload = {
+          ownerId: user.uid,
+          folio: nextFolio,
+          date: new Date().toISOString().split('T')[0],
+          glosa: "Provisionamiento Contable Mensual de Sueldos - Corrección Auditoría IA",
+          refType: 'Traspaso RRHH',
+          refFolio: 'PROV-SUELDOS',
+          createdAt: new Date().toISOString(),
+          items: [
+            { accountCode: '5-01-002', accountName: 'Sueldos y Remuneraciones de Personal', debit: discrepancy, credit: 0 },
+            { accountCode: '1-01-001', accountName: 'Caja / Banco Central', debit: 0, credit: discrepancy }
+          ]
+        };
+        await addDoc(collection(db, 'accountingEntries'), entryPayload);
+      }
 
       await addDoc(collection(db, 'systemLogs'), {
         ownerId: user.uid,
         action: 'create',
         entityId: selectedEmpId,
         entityType: 'hr',
-        description: `Generado soporte de Remuneración Firmada por $100.000 CLP para respaldar gasto de sueldos (SII Previene Gasto Rechazado Art. 21 LIR).`,
+        description: `Generado soporte de Remuneración Firmada por $${discrepancy.toLocaleString()} CLP para respaldar gasto de sueldos (SII Previene Gasto Rechazado Art. 21 LIR).`,
         userName: user.email?.split('@')[0] || 'Auditor Match',
         userEmail: user.email || '',
         createdAt: new Date().toISOString()
@@ -443,6 +469,7 @@ export default function AuditLogView() {
   const accountingSalesRevenue = entries.reduce((sum, entry) => {
     return sum + (entry.items || []).reduce((subSum, item) => {
       const isRevenueAcct = item.accountCode === '5-01-001' || 
+        item.accountCode === '4-01-001' || 
         (item.accountName || '').toLowerCase().includes('venta') || 
         (item.accountName || '').toLowerCase().includes('ingreso');
       if (isRevenueAcct) {
@@ -463,9 +490,11 @@ export default function AuditLogView() {
   const accountingCostValue = entries.reduce((sum, entry) => {
     return sum + (entry.items || []).reduce((subSum, item) => {
       const isCostAcct = item.accountCode === '5-01-004' || 
+        item.accountCode === '5-01-002' || 
         (item.accountCode || '').startsWith('5-02') || 
         (item.accountName || '').toLowerCase().includes('compra') || 
         (item.accountName || '').toLowerCase().includes('costo') || 
+        (item.accountName || '').toLowerCase().includes('gasto') || 
         (item.accountName || '').toLowerCase().includes('mercader');
       if (isCostAcct) {
         return subSum + ((Number(item.debit) || 0) - (Number(item.credit) || 0));
