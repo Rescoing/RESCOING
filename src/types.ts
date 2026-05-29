@@ -280,3 +280,23 @@ export interface SystemLog {
   description: string;
   createdAt: any;
 }
+
+export interface SiiDocument {
+  id: string;
+  type: 'nota_credito_parcial' | 'nota_credito_total' | 'nota_debito' | 'guia_despacho' | 'factura_exenta';
+  folio: string;
+  clientId: string;
+  clientName: string;
+  date: string;
+  netAmount: number;
+  iva: number;
+  totalAmount: number;
+  relatedInvoiceId?: string; // Reference inside Finance invoices
+  relatedInvoiceFolio?: string;
+  reason: string; // Motivo de emisión, e.g., "Anula Factura de Referencia", "Diferencia de Precio", etc.
+  status: 'emitid' | 'emitido' | 'nulo';
+  notes?: string;
+  ownerId: string;
+  createdAt: any;
+}
+

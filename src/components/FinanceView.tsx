@@ -25,7 +25,7 @@ import {
   Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Invoice, FinanceProcess, FinanceTask, PurchaseInvoice, Payroll, Document } from '../types';
+import { Invoice, FinanceProcess, FinanceTask, PurchaseInvoice, Payroll, Document, SiiDocument } from '../types';
 import Modal from './ui/Modal';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -34,7 +34,7 @@ import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTim
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
 
-type FinanceTab = 'billing' | 'flow' | 'reminders' | 'balance';
+type FinanceTab = 'billing' | 'sii_documents' | 'flow' | 'reminders' | 'balance';
 
 export default function FinanceView({ 
   autoOpen, 
@@ -43,6 +43,7 @@ export default function FinanceView({
   const { user } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [siiDocuments, setSiiDocuments] = useState<SiiDocument[]>([]);
   const [processes, setProcesses] = useState<FinanceProcess[]>([]);
   const [tasks, setTasks] = useState<FinanceTask[]>([]);
   const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
@@ -51,6 +52,7 @@ export default function FinanceView({
 
   const [activeTab, setActiveTab] = useState<FinanceTab>('billing');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSiiModalOpen, setIsSiiModalOpen] = useState(false);
   const [isProcessModalOpen, setIsProcessModalOpen] = useState(false);
   const [isProcessDetailModalOpen, setIsProcessDetailModalOpen] = useState(false);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -190,6 +192,11 @@ Departamento de Cobranzas / ERP Rescoing`;
       setDocuments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Document)));
     }, (error) => console.error("Finance documents error:", error));
 
+    const qSiiDocuments = query(collection(db, 'siiDocuments'), where('ownerId', '==', user.uid));
+    const unsubSiiDocuments = onSnapshot(qSiiDocuments, (snapshot) => {
+      setSiiDocuments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SiiDocument)));
+    }, (error) => console.error("Finance siiDocuments error:", error));
+
     return () => {
       unsubInvoices();
       unsubProcesses();
@@ -197,6 +204,7 @@ Departamento de Cobranzas / ERP Rescoing`;
       unsubPurchase();
       unsubPayrolls();
       unsubDocuments();
+      unsubSiiDocuments();
     };
   }, [user]);
 
@@ -231,6 +239,153 @@ Departamento de Cobranzas / ERP Rescoing`;
     currentStage: 'quotation',
     totalValue: 0
   });
+
+  const [newSiiDoc, setNewSiiDoc] = useState<Partial<SiiDocument>>({
+    type: 'nota_credito_parcial',
+    folio: '',
+    clientId: '',
+    clientName: '',
+    date: new Date().toISOString().split('T')[0],
+    netAmount: 0,
+    iva: 0,
+    totalAmount: 0,
+    relatedInvoiceId: '',
+    relatedInvoiceFolio: '',
+    reason: '3 - Corrige montos en Documento de Referencia',
+    status: 'emitido',
+    notes: ''
+  });
+
+  const getSiiDocLabel = (type: string) => {
+    switch (type) {
+      case 'nota_credito_parcial': return 'Nota de Crédito (Parcial)';
+      case 'nota_credito_total': return 'Nota de Crédito (Anulación)';
+      case 'nota_debito': return 'Nota de Débito';
+      case 'guia_despacho': return 'Guía de Despacho';
+      case 'factura_exenta': return 'Factura Exenta';
+      default: return type;
+    }
+  };
+
+  const getSiiDocTypeBadge = (type: string) => {
+    switch (type) {
+      case 'nota_credito_parcial': return 'bg-orange-50 text-orange-700 border-orange-100';
+      case 'nota_credito_total': return 'bg-rose-50 text-rose-700 border-rose-100';
+      case 'nota_debito': return 'bg-blue-50 text-blue-700 border-blue-100';
+      case 'guia_despacho': return 'bg-purple-50 text-purple-700 border-purple-100';
+      case 'factura_exenta': return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+      default: return 'bg-slate-50 text-slate-700 border-slate-100';
+    }
+  };
+
+  const handleSiiAmountChange = (val: string) => {
+    const net = parseFloat(val) || 0;
+    const iva = Math.round(net * 0.19);
+    setNewSiiDoc(prev => ({
+      ...prev,
+      netAmount: net,
+      iva: iva,
+      totalAmount: net + iva
+    }));
+  };
+
+  const handleSubmitSiiDoc = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    try {
+      const generatedFolio = newSiiDoc.folio || `SII-${Math.floor(1000 + Math.random() * 9000)}`;
+      
+      // Save SiiDocument to Firestore
+      await addDoc(collection(db, 'siiDocuments'), {
+        ...newSiiDoc,
+        folio: generatedFolio,
+        status: 'emitido',
+        ownerId: user.uid,
+        createdAt: serverTimestamp()
+      });
+
+      // Perform linked actions on Reference Invoice if selected
+      if (newSiiDoc.relatedInvoiceId) {
+        const invRef = doc(db, 'invoices', newSiiDoc.relatedInvoiceId);
+        const relatedInv = invoices.find(inv => inv.id === newSiiDoc.relatedInvoiceId);
+        
+        if (relatedInv) {
+          if (newSiiDoc.type === 'nota_credito_total') {
+            // Fully void reference invoice
+            await updateDoc(invRef, {
+              status: 'Vencido', // or we can create a special deactivated marker like empty pending or updated state
+              netAmount: 0,
+              iva: 0,
+              totalAmount: 0,
+              paymentMethod: 'Transferencia'
+            });
+          } else if (newSiiDoc.type === 'nota_credito_parcial') {
+            // Subtract partial amounts
+            const deductNet = newSiiDoc.netAmount || 0;
+            const deductIva = newSiiDoc.iva || 0;
+            const deductTotal = newSiiDoc.totalAmount || 0;
+            
+            const newNet = Math.max(0, relatedInv.netAmount - deductNet);
+            const newIva = Math.max(0, relatedInv.iva - deductIva);
+            const newTotal = Math.max(0, relatedInv.totalAmount - deductTotal);
+            
+            await updateDoc(invRef, {
+              netAmount: newNet,
+              iva: newIva,
+              totalAmount: newTotal
+            });
+          } else if (newSiiDoc.type === 'nota_debito') {
+            // Increase referenced amounts
+            const addNet = newSiiDoc.netAmount || 0;
+            const addIva = newSiiDoc.iva || 0;
+            const addTotal = newSiiDoc.totalAmount || 0;
+            
+            const newNet = relatedInv.netAmount + addNet;
+            const newIva = relatedInv.iva + addIva;
+            const newTotal = relatedInv.totalAmount + addTotal;
+            
+            await updateDoc(invRef, {
+              netAmount: newNet,
+              iva: newIva,
+              totalAmount: newTotal
+            });
+          }
+        }
+      }
+
+      // Add a system log/notification
+      await addDoc(collection(db, 'notifications'), {
+        ownerId: user.uid,
+        title: `📑 Documento SII Emitido`,
+        message: `Se ha emitido con éxito el documento "${getSiiDocLabel(newSiiDoc.type!)} #${generatedFolio}" por $${newSiiDoc.totalAmount?.toLocaleString()} asociado al cliente ${newSiiDoc.clientName}.`,
+        type: 'success',
+        read: false,
+        createdAt: serverTimestamp()
+      });
+
+      setIsSiiModalOpen(false);
+
+      // Reset
+      setNewSiiDoc({
+        type: 'nota_credito_parcial',
+        folio: '',
+        clientId: '',
+        clientName: '',
+        date: new Date().toISOString().split('T')[0],
+        netAmount: 0,
+        iva: 0,
+        totalAmount: 0,
+        relatedInvoiceId: '',
+        relatedInvoiceFolio: '',
+        reason: '3 - Corrige montos en Documento de Referencia',
+        status: 'emitido',
+        notes: ''
+      });
+    } catch (error) {
+      console.error("Error submitting SII Document adjustment:", error);
+    }
+  };
 
   const handleAmountChange = (val: string) => {
     const net = parseFloat(val) || 0;
@@ -592,9 +747,10 @@ Departamento de Cobranzas / ERP Rescoing`;
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 gap-8">
+      <div className="flex border-b border-slate-200 gap-8 overflow-x-auto">
         {[
           { id: 'billing', label: 'Facturación / Invoices', icon: FileCheck },
+          { id: 'sii_documents', label: 'Documentos SII Chile', icon: FileText },
           { id: 'flow', label: 'Seguimiento de Flujo', icon: Activity },
           { id: 'reminders', label: 'Remanentes y Cobranza', icon: Bell },
           { id: 'balance', label: 'Balance Real (Gasto v/s Ingreso)', icon: TrendingUp },
@@ -774,6 +930,185 @@ Departamento de Cobranzas / ERP Rescoing`;
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'sii_documents' && (
+          <motion.div 
+            key="sii_documents"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="space-y-8"
+          >
+            {/* Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 font-mono">
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-all hover:border-slate-300">
+                <div className="flex justify-between items-center mb-6">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Notas de Crédito Emitidas</p>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-100">SII Tipo 61</span>
+                </div>
+                <h3 className="text-2xl font-bold text-rose-600">
+                  ${siiDocuments
+                    .filter(d => (d.type === 'nota_credito_total' || d.type === 'nota_credito_parcial') && d.status !== 'nulo')
+                    .reduce((sum, d) => sum + (d.totalAmount || 0), 0)
+                    .toLocaleString()}
+                </h3>
+                <span className="text-[10px] font-sans text-slate-400 font-medium mt-1 block">
+                  {siiDocuments.filter(d => d.type === 'nota_credito_total' || d.type === 'nota_credito_parcial').length} documentos de ajuste
+                </span>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-all hover:border-slate-300">
+                <div className="flex justify-between items-center mb-6">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Notas de Débito Emitidas</p>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">SII Tipo 56</span>
+                </div>
+                <h3 className="text-2xl font-bold text-blue-600">
+                  ${siiDocuments
+                    .filter(d => d.type === 'nota_debito' && d.status !== 'nulo')
+                    .reduce((sum, d) => sum + (d.totalAmount || 0), 0)
+                    .toLocaleString()}
+                </h3>
+                <span className="text-[10px] font-sans text-slate-400 font-medium mt-1 block">
+                  {siiDocuments.filter(d => d.type === 'nota_debito').length} cargos adicionales
+                </span>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-all hover:border-slate-300">
+                <div className="flex justify-between items-center mb-6">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Guías de Despacho (Logística)</p>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-100">SII Tipo 52</span>
+                </div>
+                <h3 className="text-2xl font-bold text-slate-900">
+                  ${siiDocuments
+                    .filter(d => d.type === 'guia_despacho' && d.status !== 'nulo')
+                    .reduce((sum, d) => sum + (d.totalAmount || 0), 0)
+                    .toLocaleString()}
+                </h3>
+                <span className="text-[10px] font-sans text-slate-400 font-medium mt-1 block">
+                  {siiDocuments.filter(d => d.type === 'guia_despacho').length} guías de movimiento corporativo
+                </span>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-all hover:border-slate-300">
+                <div className="flex justify-between items-center mb-6">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-sans">Facturas Exentas SII</p>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">SII Tipo 34</span>
+                </div>
+                <h3 className="text-2xl font-bold text-slate-900">
+                  ${siiDocuments
+                    .filter(d => d.type === 'factura_exenta' && d.status !== 'nulo')
+                    .reduce((sum, d) => sum + (d.totalAmount || 0), 0)
+                    .toLocaleString()}
+                </h3>
+                <span className="text-[10px] font-sans text-slate-400 font-medium mt-1 block">
+                  {siiDocuments.filter(d => d.type === 'factura_exenta').length} documentos no afectos a IVA
+                </span>
+              </div>
+            </div>
+
+            {/* List and Actions Header */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Documentos Tributarios de Ajuste (SII Chile)</h3>
+                  <p className="text-xs text-slate-450 mt-1">Gestione notas de crédito, débitos, exenciones y despachos oficiales asociados a sus facturas mercantiles de finanzas.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsSiiModalOpen(true)}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-2 uppercase tracking-wider"
+                  >
+                    <Plus size={14} />
+                    <span>Emitir Docto. SII</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto border border-slate-100 rounded-lg">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                      <th className="px-6 py-4">Folio SII</th>
+                      <th className="px-6 py-4">Tipo de Documento</th>
+                      <th className="px-6 py-4">Cliente / Información</th>
+                      <th className="px-6 py-4 font-mono">Ref. Factura</th>
+                      <th className="px-6 py-4">Motivo SII</th>
+                      <th className="px-6 py-4">Fecha Emisión</th>
+                      <th className="px-6 py-4 text-right">Monto Total</th>
+                      <th className="px-6 py-4 text-center">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 text-sm">
+                    {siiDocuments.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-12 text-center text-slate-400 italic">
+                          No se han emitido documentos tributarios de ajuste (Notas de Crédito, Débito o Guías SII) todavía.
+                        </td>
+                      </tr>
+                    ) : (
+                      siiDocuments.map((docItem) => (
+                        <tr key={docItem.id} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="px-6 py-4 font-mono font-bold text-slate-800">#{docItem.folio}</td>
+                          <td className="px-6 py-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${getSiiDocTypeBadge(docItem.type)}`}>
+                              {getSiiDocLabel(docItem.type)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="font-bold text-slate-900">{docItem.clientName}</div>
+                            {docItem.status === 'nulo' ? (
+                              <span className="text-[10px] text-rose-600 font-bold uppercase">Invalidada</span>
+                            ) : (
+                              <span className="text-[10px] text-emerald-600 font-bold uppercase">SII Válida</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            {docItem.relatedInvoiceFolio ? (
+                              <span className="font-mono font-bold text-indigo-650 bg-indigo-50 border border-indigo-100/40 px-1.5 py-0.5 rounded text-[10px]">
+                                FAC: {docItem.relatedInvoiceFolio}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">Sin enlace</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-slate-500 font-medium text-xs max-w-[180px] truncate" title={docItem.reason}>
+                            {docItem.reason}
+                          </td>
+                          <td className="px-6 py-4 text-slate-500 font-medium">{docItem.date}</td>
+                          <td className="px-6 py-4 text-right font-mono font-bold text-slate-900">
+                            <span className={docItem.status === 'nulo' ? 'line-through text-slate-400' : ''}>
+                              ${docItem.totalAmount?.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`¿Está seguro de anular el documento tributario #${docItem.folio}?`)) return;
+                                  const docRef = doc(db, 'siiDocuments', docItem.id);
+                                  await updateDoc(docRef, { status: 'nulo' });
+                                }}
+                                disabled={docItem.status === 'nulo'}
+                                className={`px-2 py-1 text-[10px] font-black rounded border transition-all uppercase tracking-wider ${
+                                  docItem.status === 'nulo' 
+                                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' 
+                                    : 'bg-white border-rose-200 text-rose-600 hover:bg-rose-50 cursor-pointer'
+                                }`}
+                              >
+                                {docItem.status === 'nulo' ? 'Anulado' : 'Anular'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1250,6 +1585,229 @@ Departamento de Cobranzas / ERP Rescoing`;
                   <span>Enviar Alerta de Pago</span>
                 </>
               )}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Sii Document Modal */}
+      <Modal
+        isOpen={isSiiModalOpen}
+        onClose={() => setIsSiiModalOpen(false)}
+        title="Emitir Documento SII Especial Chile"
+      >
+        <form onSubmit={handleSubmitSiiDoc} className="space-y-4 font-sans text-left">
+          <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center gap-3">
+            <div className="p-2 bg-indigo-100 text-indigo-700 rounded-lg">
+              <FileText size={18} />
+            </div>
+            <div>
+              <p className="text-[9px] font-black text-indigo-505 uppercase tracking-widest">Facturación Electrónica</p>
+              <h4 className="text-xs font-bold text-indigo-900 leading-snug">
+                Portal de Ajuste Mercantil - Normativa SII Chile
+              </h4>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* Tipo de Documento */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Tipo de Documento Oficial</label>
+              <select
+                required
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                value={newSiiDoc.type}
+                onChange={e => {
+                  const type = e.target.value as any;
+                  // If we change to NC total and there is already a related invoice, prefill total
+                  let amtNet = newSiiDoc.netAmount || 0;
+                  let amtIva = newSiiDoc.iva || 0;
+                  let amtTotal = newSiiDoc.totalAmount || 0;
+                  
+                  if (type === 'nota_credito_total' && newSiiDoc.relatedInvoiceId) {
+                    const match = invoices.find(inv => inv.id === newSiiDoc.relatedInvoiceId);
+                    if (match) {
+                      amtNet = match.netAmount;
+                      amtIva = match.iva;
+                      amtTotal = match.totalAmount;
+                    }
+                  }
+                  
+                  setNewSiiDoc(prev => ({
+                    ...prev,
+                    type,
+                    netAmount: amtNet,
+                    iva: amtIva,
+                    totalAmount: amtTotal
+                  }));
+                }}
+              >
+                <option value="nota_credito_parcial">Nota de Crédito (Tipo 61) - Corrección/Descuento de Monto</option>
+                <option value="nota_credito_total">Nota de Crédito (Tipo 61) - Anulación de Documento Completo</option>
+                <option value="nota_debito">Nota de Débito (Tipo 56) - Aumento/Intereses de Cargo</option>
+                <option value="guia_despacho">Guía de Despacho (Tipo 52) - Entrega/Traslado de Obras</option>
+                <option value="factura_exenta">Factura Exenta Electrónica (Tipo 34)</option>
+              </select>
+            </div>
+
+            {/* Relación con Factura de Referencia (Finance Invoices Linkage) */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                <span>Factura de Referencia (Enlace de Módulos)</span>
+                <span className="text-[9px] bg-primary/10 text-primary px-1 py-0.2 rounded font-bold uppercase">Conversación Real</span>
+              </label>
+              <select
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                value={newSiiDoc.relatedInvoiceId || ''}
+                onChange={e => {
+                  const invId = e.target.value;
+                  const match = invoices.find(inv => inv.id === invId);
+                  if (match) {
+                    const isTotalNc = newSiiDoc.type === 'nota_credito_total';
+                    const amtNet = isTotalNc ? match.netAmount : (newSiiDoc.netAmount || 0);
+                    const amtIva = isTotalNc ? match.iva : (newSiiDoc.iva || 0);
+                    const amtTotal = isTotalNc ? match.totalAmount : (newSiiDoc.totalAmount || 0);
+
+                    setNewSiiDoc(prev => ({
+                      ...prev,
+                      relatedInvoiceId: match.id,
+                      relatedInvoiceFolio: match.siiFolio || match.id.substring(0, 8).toUpperCase(),
+                      clientName: match.client,
+                      netAmount: amtNet,
+                      iva: amtIva,
+                      totalAmount: amtTotal
+                    }));
+                  } else {
+                    setNewSiiDoc(prev => ({
+                      ...prev,
+                      relatedInvoiceId: '',
+                      relatedInvoiceFolio: ''
+                    }));
+                  }
+                }}
+              >
+                <option value="">-- No vincular a una factura (Emisión independiente) --</option>
+                {invoices.map(inv => (
+                  <option key={inv.id} value={inv.id}>
+                    FAC #{inv.siiFolio || inv.id.substring(0, 8).toUpperCase()} - {inv.client} (${inv.totalAmount.toLocaleString()})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-400 mt-1 italic font-medium leading-tight">
+                Vincule el documento a una factura para cambiar su balance o estado automáticamente al emitir.
+              </p>
+            </div>
+
+            {/* Cliente */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Cliente Corporativo</label>
+              <input 
+                required
+                type="text"
+                placeholder="Razón Social del Cliente"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                value={newSiiDoc.clientName || ''}
+                onChange={e => setNewSiiDoc(prev => ({ ...prev, clientName: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {/* Folio */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Folio Oficial SII (#)</label>
+                <input 
+                  required
+                  type="text"
+                  placeholder="Ej: 541"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-primary focus:outline-none font-mono"
+                  value={newSiiDoc.folio || ''}
+                  onChange={e => setNewSiiDoc(prev => ({ ...prev, folio: e.target.value }))}
+                />
+              </div>
+
+              {/* Fecha */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Fecha de Emisión</label>
+                <input 
+                  required
+                  type="date"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-primary focus:outline-none font-sans"
+                  value={newSiiDoc.date || ''}
+                  onChange={e => setNewSiiDoc(prev => ({ ...prev, date: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Motivo */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Motivo de Emisión</label>
+              <select
+                required
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                value={newSiiDoc.reason}
+                onChange={e => setNewSiiDoc(prev => ({ ...prev, reason: e.target.value }))}
+              >
+                <option value="1 - Anula Documento de Referencia">Anula Documento de Referencia de forma íntegra</option>
+                <option value="2 - Corrige texto en Documento de Referencia">Corrige datos o Glosas de Referencia</option>
+                <option value="3 - Corrige montos en Documento de Referencia">Corrige montos, items o valores del Documento</option>
+                <option value="4 - Descuento extraordinario">Descuento o bonificación extraordinaria acordada</option>
+                <option value="Despacho o traslado logístico interno">Traslado logístico interno de obras</option>
+              </select>
+            </div>
+
+            {/* Montos */}
+            <div className="bg-slate-100/50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1">Monto Neto ($ CLP)</label>
+                <input 
+                  required
+                  type="number"
+                  placeholder="Monto antes de impuestos"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-primary focus:outline-none font-mono font-bold bg-white"
+                  value={newSiiDoc.netAmount || ''}
+                  onChange={e => handleSiiAmountChange(e.target.value)}
+                  disabled={newSiiDoc.type === 'nota_credito_total' && !!newSiiDoc.relatedInvoiceId}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-1">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">IVA Calculado (19%)</p>
+                  <p className="text-xs font-mono font-black text-slate-650 mt-1">${(newSiiDoc.iva || 0).toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Documento</p>
+                  <p className="text-xs font-mono font-black text-indigo-700 mt-1">${(newSiiDoc.totalAmount || 0).toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* internal notes */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">Glosas / Notas del Documento</label>
+              <textarea
+                rows={3}
+                placeholder="Indique glosas especificas..."
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                value={newSiiDoc.notes || ''}
+                onChange={e => setNewSiiDoc(prev => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setIsSiiModalOpen(false)}
+              className="px-4 py-2 border border-slate-200 text-slate-500 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors uppercase tracking-wider cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all uppercase tracking-wider cursor-pointer"
+            >
+              Emitir y Registrar SII
             </button>
           </div>
         </form>
