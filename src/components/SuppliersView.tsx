@@ -185,24 +185,20 @@ Detalles del compromiso de pago:
 Notificación automática emitida por el Sistema ERP.
       `;
 
-      fetch('https://api.web3forms.com/submit', {
+      fetch('/api/email/send', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          access_key: '62df9ff2-6eac-4e4b-97fc-c999cb5038c3',
-          name: 'Notificaciones ERP',
-          email: user?.email || 'rescoing@gmail.com', // Aligning SPF/DMARC with registered account
-          to_email: 'rescoing@gmail.com',
+          to: 'rescoing@gmail.com', // Recibe aviso de pago programado (generalmente tesorería de Resco)
           subject: `📆 ERP AVISO DE PAGO: ${selectedSupplier.name} ($${selectedInvoice.totalAmount?.toLocaleString()})`,
           message: emailMessage
         })
       })
       .then(res => res.json())
-      .then(data => console.log('Web3Forms dispatch success:', data))
-      .catch(err => console.warn('Web3Forms dispatch error/offline:', err));
+      .then(data => console.log('SMTP notification dispatch success:', data))
+      .catch(err => console.warn('SMTP notification dispatch error:', err));
 
       setIsNoticeModalOpen(false);
       setNewNotice({ plannedPaymentDate: new Date().toISOString().split('T')[0], notes: '', status: 'sent' });

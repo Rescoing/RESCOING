@@ -87,10 +87,12 @@ export default function FinanceView({
   const [alertRecipientEmail, setAlertRecipientEmail] = useState('');
   const [isSendingAlert, setIsSendingAlert] = useState(false);
   const [alertSuccess, setAlertSuccess] = useState<boolean | null>(null);
+  const [alertSimulationNotice, setAlertSimulationNotice] = useState<string | null>(null);
 
   const openAlertModal = (invoice: Invoice) => {
     setSelectedInvoiceForAlert(invoice);
     setAlertSubject(`⚠️ ERP ALERTA DE PAGO: Documento pendiente de ${invoice.client}`);
+    setAlertSimulationNotice(null);
     
     // Find matching contact from CRM list
     const matchedContact = (contacts || []).find(c => {
@@ -139,32 +141,30 @@ Departamento de Cobranzas / ERP Rescoing`;
 
     setIsSendingAlert(true);
     setAlertSuccess(null);
+    setAlertSimulationNotice(null);
 
     let submitSuccess = false;
+    let simulated = false;
+    let customMessage = "";
     try {
-      const formattedSubject = `⚠️ ERP ALERTA PAGO: [Destinatario: ${alertRecipientEmail}] - ${alertSubject.replace('⚠️ ERP ALERTA DE PAGO: ', '')}`;
-      const formattedMessage = `=== ENVIADO DESDE EL ERP PARA CLIENTE: ${alertRecipientEmail || 'No Definido'} ===\n\n${alertMessage}`;
-
-      const response = await fetch('https://api.web3forms.com/submit', {
+      const response = await fetch('/api/email/send', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          access_key: '62df9ff2-6eac-4e4b-97fc-c999cb5038c3',
-          name: 'Notificaciones Cobranza ERP',
-          email: user.email || 'rescoing@gmail.com', // Aligning SPF/DMARC with registered account
-          replyto: alertRecipientEmail || 'rescoing@gmail.com',
-          subject: formattedSubject,
-          message: formattedMessage
+          to: alertRecipientEmail || 'rescoing@gmail.com',
+          subject: alertSubject,
+          message: alertMessage
         })
       });
 
       const data = await response.json();
       submitSuccess = !!data.success;
+      simulated = !!data.simulated;
+      customMessage = data.message || "";
     } catch (err) {
-      console.warn("Web3Forms API send failure/offline, falling back to local simulation:", err);
+      console.warn("SMTP API send failure, falling back:", err);
     }
 
     try {
@@ -179,18 +179,24 @@ Departamento de Cobranzas / ERP Rescoing`;
       // Also add a system log/notification
       await addDoc(collection(db, 'notifications'), {
         ownerId: user.uid,
-        title: '📧 Alerta de Pago Registrada',
-        message: `Se ha registrado el aviso de cobro para "${selectedInvoiceForAlert.client}" ($${selectedInvoiceForAlert.totalAmount?.toLocaleString()}) enviado a ${alertRecipientEmail || 'rescoing@gmail.com'}.`,
+        title: simulated ? '📧 Alerta Simulada ERP' : '📧 Alerta Enviada (SMTP)',
+        message: simulated 
+          ? `[Simulación] Se registró aviso para "${selectedInvoiceForAlert.client}" destinatario ${alertRecipientEmail}.`
+          : `Se envió aviso de cobro formal corporativo para "${selectedInvoiceForAlert.client}" a ${alertRecipientEmail}.`,
         type: 'info',
         read: false,
         createdAt: serverTimestamp()
       });
 
-      setAlertSuccess(true);
+      if (simulated) {
+        setAlertSimulationNotice(customMessage);
+      }
+      setAlertSuccess(submitSuccess);
       setTimeout(() => {
         setIsAlertModalOpen(false);
         setSelectedInvoiceForAlert(null);
-      }, 1500);
+        setAlertSimulationNotice(null);
+      }, simulated ? 6000 : 2500);
     } catch (err) {
       console.error("Error updating alert status in Firestore:", err);
       setAlertSuccess(false);
@@ -1726,11 +1732,11 @@ Departamento de Cobranzas / ERP Rescoing`;
         )}
       </AnimatePresence>
 
-      {/* Web3Forms Payment Alert Modal */}
+      {/* SMTP Payment Alert Modal */}
       <Modal
         isOpen={isAlertModalOpen}
         onClose={() => !isSendingAlert && setIsAlertModalOpen(false)}
-        title="Enviar Alerta de Pago Automatizada"
+        title="Enviar Alerta de Pago Corporativa (SMTP)"
       >
         <form onSubmit={handleSendPaymentAlert} className="space-y-4 font-sans text-left">
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60 flex items-center gap-3.5">
@@ -1739,10 +1745,10 @@ Departamento de Cobranzas / ERP Rescoing`;
             </div>
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Servicio Integrado</p>
-              <h4 className="text-sm font-black text-slate-800">Web3Forms Mail Gateway</h4>
+              <h4 className="text-sm font-black text-slate-800">SMTP Backend Gateway</h4>
             </div>
-            <div className="ml-auto bg-indigo-100 text-indigo-850 text-[10px] font-black uppercase px-2 py-0.5 rounded-full border border-indigo-200 tracking-wider">
-              En Línea
+            <div className="ml-auto bg-green-100 text-green-850 text-[10px] font-black uppercase px-2 py-0.5 rounded-full border border-green-200 tracking-wider">
+              Dominio Propio
             </div>
           </div>
 
@@ -1757,7 +1763,7 @@ Departamento de Cobranzas / ERP Rescoing`;
                 onChange={e => setAlertRecipientEmail(e.target.value)}
               />
               <p className="text-[10px] text-indigo-600 font-semibold italic mt-1">
-                Nota: Por limitaciones del plan gratuito de Web3Forms, toda alerta llegará directamente a tu correo registrado (rescoing@gmail.com) para pruebas, incluyendo los datos del destinatario ({alertRecipientEmail}) en el cuerpo y asunto del correo.
+                Enviado de forma segura desde el backend con dominio propio <strong>@rescoingenieria.cl</strong>.
               </p>
             </div>
 
@@ -1785,9 +1791,16 @@ Departamento de Cobranzas / ERP Rescoing`;
           </div>
 
           {alertSuccess === true && (
-            <div className="p-3 bg-emerald-50 text-emerald-805 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
-              <Check className="text-emerald-600 stroke-[3]" size={16} />
-              <span>¡Alerta de pago enviada a {alertRecipientEmail || 'rescoing@gmail.com'} exitosamente!</span>
+            <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Check className="text-emerald-600 stroke-[3]" size={16} />
+                <span>¡Alerta de pago enviada exitosamente!</span>
+              </div>
+              {alertSimulationNotice ? (
+                <p className="text-[10px] text-indigo-600 font-normal mt-1 leading-relaxed">{alertSimulationNotice}</p>
+              ) : (
+                <p className="text-[10px] text-emerald-600 font-normal mt-1">Enviado directamente a {alertRecipientEmail} usando las credenciales SMTP configuradas de rescoingenieria.cl.</p>
+              )}
             </div>
           )}
 
