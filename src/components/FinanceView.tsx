@@ -263,6 +263,8 @@ Departamento de Cobranzas / ERP Rescoing`;
     end: ''
   });
 
+  const [billingSearchTerm, setBillingSearchTerm] = useState('');
+
   useEffect(() => {
     if (autoOpen) {
       if (activeTab === 'billing') setIsModalOpen(true);
@@ -527,11 +529,14 @@ Departamento de Cobranzas / ERP Rescoing`;
     }
   };
 
-  const parseDate = (dateStr: string) => {
+  const parseDate = (dateStr: any) => {
     // Intentar parsear formatos comunes en la app
     // "15 may 2026" o "15/05/2024"
+    if (!dateStr || typeof dateStr !== 'string') {
+      return new Date();
+    }
     try {
-      const parts = dateStr.split(' ');
+      const parts = dateStr.trim().split(' ');
       if (parts.length === 3) {
         const months: Record<string, number> = {
           'ene': 0, 'jan': 0,
@@ -561,6 +566,16 @@ Departamento de Cobranzas / ERP Rescoing`;
   };
 
   const filteredInvoices = invoices.filter(inv => {
+    if (billingSearchTerm) {
+      const term = billingSearchTerm.toLowerCase();
+      const matchClient = (inv.client || '').toLowerCase().includes(term);
+      const matchRut = (inv.rut || '').toLowerCase().includes(term);
+      const matchId = (inv.id || '').toLowerCase().includes(term);
+      const matchFolio = (inv.siiFolio || '').toLowerCase().includes(term);
+      const matchStatus = (inv.status || '').toLowerCase().includes(term);
+      if (!matchClient && !matchRut && !matchId && !matchFolio && !matchStatus) return false;
+    }
+
     if (!dateFilter.start && !dateFilter.end) return true;
     const invDate = parseDate(inv.date);
     if (dateFilter.start) {
@@ -1030,7 +1045,13 @@ Departamento de Cobranzas / ERP Rescoing`;
                 <div className="flex items-center gap-4">
                   <div className="relative">
                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input type="text" placeholder="Buscar factura..." className="pl-9 pr-4 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary/20 outline-none" />
+                    <input 
+                      type="text" 
+                      placeholder="Buscar factura..." 
+                      className="pl-9 pr-4 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-primary/20 outline-none" 
+                      value={billingSearchTerm}
+                      onChange={e => setBillingSearchTerm(e.target.value)}
+                    />
                   </div>
                   <button className="p-2 text-slate-400 hover:text-slate-600"><Filter size={18} /></button>
                 </div>
@@ -1049,8 +1070,15 @@ Departamento de Cobranzas / ERP Rescoing`;
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 text-sm">
-                    {filteredInvoices.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors group">
+                    {filteredInvoices.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-12 text-center text-slate-400 italic font-sans text-xs">
+                          No se encontraron facturas emitidas que coincidan con la búsqueda o el filtro de fechas.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredInvoices.map((inv) => (
+                        <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors group">
                         <td className="px-6 py-4 font-mono font-medium text-slate-500">{inv.id}</td>
                         <td className="px-6 py-4 font-bold text-slate-900">
                           <div>{inv.client}</div>
@@ -1127,7 +1155,7 @@ Departamento de Cobranzas / ERP Rescoing`;
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    )))}
                   </tbody>
                 </table>
               </div>
