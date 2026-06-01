@@ -30,6 +30,8 @@ interface LibraryItem {
   createdAt: any;
   isFolder?: boolean;
   folderId?: string | null;
+  uploadedBy?: string;
+  uploaderEmail?: string;
 }
 
 const DOCUMENT_TYPES = [
@@ -44,9 +46,42 @@ const DOCUMENT_TYPES = [
 ];
 
 export default function LibraryView() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [usersMap, setUsersMap] = useState<Record<string, { displayName: string; email: string }>>({});
+
+  useEffect(() => {
+    if (!user) return;
+    const qUsers = query(collection(db, 'users'));
+    const unsubscribeUsers = onSnapshot(qUsers, (snapshot) => {
+      const uMap: Record<string, { displayName: string; email: string }> = {};
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        uMap[docSnap.id] = {
+          displayName: data.displayName || '',
+          email: data.email || ''
+        };
+      });
+      setUsersMap(uMap);
+    }, (error) => {
+      console.error("Error fetching users for uploader mapping:", error);
+    });
+    return () => unsubscribeUsers();
+  }, [user]);
+
+  const getUploaderInfo = (item: LibraryItem) => {
+    if (item.uploadedBy) {
+      return item.uploadedBy;
+    }
+    const mappedUser = usersMap[item.ownerId];
+    if (mappedUser) {
+      return mappedUser.displayName || mappedUser.email;
+    }
+    return item.ownerId === user?.uid 
+      ? (profile?.displayName || user?.displayName || user?.email || 'Tú') 
+      : 'Administrador';
+  };
   
   // Modals status
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -180,6 +215,8 @@ export default function LibraryView() {
             fileData: base64,
             folio: nextFolio,
             ownerId: user.uid,
+            uploadedBy: profile?.displayName || user.displayName || user.email?.split('@')[0] || 'Administrador',
+            uploaderEmail: user.email || '',
             isFolder: false,
             folderId: currentFolderId, // save at current folder level
             createdAt: serverTimestamp()
@@ -613,9 +650,15 @@ export default function LibraryView() {
                   className={`bg-white rounded-2xl border transition-all overflow-hidden flex flex-col ${selectedIds.includes(item.id) ? 'border-primary ring-2 ring-primary/10' : 'border-slate-150 shadow-sm hover:shadow-md'}`}
                 >
                   {/* Card visual stage */}
-                  <div className="h-32 bg-slate-50 flex items-center justify-center border-b border-slate-100 relative group">
+                  <div 
+                    onClick={item.isFolder ? () => setCurrentFolderId(item.id) : () => setPreviewItem(item)}
+                    className="h-32 bg-slate-50 flex items-center justify-center border-b border-slate-100 relative group cursor-pointer"
+                  >
                     <button 
-                      onClick={() => toggleSelect(item.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(item.id);
+                      }}
                       className="absolute top-3 left-3 z-10 p-1.5 bg-white rounded-lg border border-slate-100 shadow-sm cursor-pointer"
                     >
                       {selectedIds.includes(item.id) ? (
@@ -626,7 +669,7 @@ export default function LibraryView() {
                     </button>
                     
                     {item.isFolder ? (
-                      <div className="flex flex-col items-center justify-center gap-2 mt-4 cursor-pointer" onClick={() => setCurrentFolderId(item.id)}>
+                      <div className="flex flex-col items-center justify-center gap-2 mt-4">
                         <Folder size={48} className="text-amber-400 fill-amber-200/85 group-hover:scale-110 transition-transform" />
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Carpeta</span>
                       </div>
@@ -650,7 +693,10 @@ export default function LibraryView() {
                     <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-20">
                       {item.isFolder ? (
                         <button 
-                          onClick={() => setCurrentFolderId(item.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCurrentFolderId(item.id);
+                          }}
                           className="p-2 bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-lg font-bold text-xs flex items-center gap-1.5 text-slate-800 cursor-pointer"
                         >
                           <FolderOpen size={16} className="text-amber-500" />
@@ -659,7 +705,10 @@ export default function LibraryView() {
                       ) : (
                         <>
                           <button 
-                            onClick={() => setPreviewItem(item)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewItem(item);
+                            }}
                             className="p-2 bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-lg font-bold text-xs flex items-center gap-1.5 text-slate-800 cursor-pointer"
                           >
                             <Eye size={16} className="text-slate-600" />
@@ -667,7 +716,10 @@ export default function LibraryView() {
                           </button>
                           
                           <button 
-                            onClick={() => handleDownload(item)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownload(item);
+                            }}
                             className="p-2 bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-lg text-slate-800 cursor-pointer"
                             title="Descargar"
                           >
@@ -677,7 +729,11 @@ export default function LibraryView() {
                       )}
 
                       <button 
-                        onClick={() => { setItemToMove(item); setIsMoveModalOpen(true); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setItemToMove(item);
+                          setIsMoveModalOpen(true);
+                        }}
                         className="p-2 bg-white rounded-xl hover:bg-slate-100 text-indigo-600 font-bold transition-colors shadow-lg cursor-pointer"
                         title="Mover de carpeta"
                       >
@@ -692,13 +748,25 @@ export default function LibraryView() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <h3 
-                            onClick={item.isFolder ? () => setCurrentFolderId(item.id) : undefined}
-                            className={`font-black text-slate-800 leading-snug truncate ${item.isFolder ? 'cursor-pointer hover:text-primary transition-colors hover:underline' : ''}`}
+                            onClick={item.isFolder ? () => setCurrentFolderId(item.id) : () => setPreviewItem(item)}
+                            className="font-black text-slate-800 leading-snug truncate cursor-pointer hover:text-primary transition-colors hover:underline"
                             title={item.name}
                           >
                             {item.name}
                           </h3>
                           <p className="text-xs text-slate-450 mt-0.5 truncate">{item.isFolder ? 'Directorio de archivos' : item.fileName}</p>
+                          
+                          {/* Rich Uploader Badge with initial avatar */}
+                          {!item.isFolder && (
+                            <div className="mt-2.5 flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-100 max-w-fit">
+                              <div className="w-4.5 h-4.5 rounded-full bg-slate-200 flex items-center justify-center text-[8px] font-black text-slate-600 shrink-0">
+                                {getUploaderInfo(item).charAt(0).toUpperCase()}
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-bold truncate max-w-[140px]" title={getUploaderInfo(item)}>
+                                {getUploaderInfo(item)}
+                              </span>
+                            </div>
+                          )}
                         </div>
                         {item.folio > 0 && (
                           <div className="bg-primary/10 text-primary text-[9px] font-black px-1.5 py-0.5 rounded shrink-0 font-mono">
@@ -715,7 +783,7 @@ export default function LibraryView() {
                       
                       <button 
                         onClick={() => handleDelete(item.id, item.name, item.isFolder)}
-                        className="p-1.5 text-slate-300 hover:text-rose-650 hover:bg-slate-50 hover:text-rose-600 transition-colors rounded-lg cursor-pointer"
+                        className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-slate-50 transition-colors rounded-lg cursor-pointer"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -1013,8 +1081,18 @@ export default function LibraryView() {
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between border-b pb-3.5">
             <div>
-              <p className="text-xs font-bold text-slate-800">{previewItem?.fileName}</p>
-              <p className="text-[10px] uppercase tracking-wider text-slate-400 mt-0.5">{previewItem?.docType} • Folio #{previewItem?.folio.toString().padStart(4, '0')}</p>
+              <p className="text-xs font-bold text-slate-850">{previewItem?.fileName}</p>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                  {previewItem?.docType} • Folio #{previewItem?.folio.toString().padStart(4, '0')}
+                </span>
+                {previewItem && (
+                  <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full flex items-center gap-1.5 border border-slate-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    <span>Subido por: <strong className="text-slate-800">{getUploaderInfo(previewItem)}</strong></span>
+                  </span>
+                )}
+              </div>
             </div>
             <button
               onClick={() => previewItem && handleDownload(previewItem)}

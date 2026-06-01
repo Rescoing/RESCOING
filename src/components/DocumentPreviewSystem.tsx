@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   FileText, 
   FileCode, 
@@ -8,7 +8,10 @@ import {
   ZoomOut,
   File,
   Search,
-  Download
+  Download,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -122,23 +125,12 @@ export function DocumentPreviewViewer({ item }: { item: PreviewItem | null }) {
         <div className="flex items-center justify-between p-2 px-3 bg-rose-50 text-rose-800 rounded-lg text-xs font-bold border border-rose-100 shrink-0">
           <div className="flex items-center gap-2">
             <FileText size={15} className="text-rose-600" />
-            <span>Visualizador de PDF integrado en el navegador</span>
+            <span>Visualizador PDF de Alta Compatibilidad (Canvas)</span>
           </div>
-          <span className="text-[10px] text-rose-600 font-mono">Carga Inmediata (Blob URL)</span>
+          <span className="text-[10px] text-rose-650 font-bold bg-rose-100/80 border border-rose-200 rounded px-2 py-0.5">Soporte Universal</span>
         </div>
 
-        <div className="w-full h-[520px] rounded-xl overflow-hidden bg-slate-200 shadow-inner relative border border-slate-200">
-          {blobUrl ? (
-            <iframe 
-              src={blobUrl} 
-              className="w-full h-full border-0"
-              title={item.name || item.fileName}
-            />
-          ) : (
-            <div className="p-8 text-center text-slate-400 text-xs animate-pulse">Cargando archivo PDF...</div>
-          )}
-        </div>
-        <p className="text-[10px] text-slate-400 text-center leading-normal">Si tu navegador no soporta visualización de PDFs embebidos, puedes descargarlo usando el enlace superior.</p>
+        <PdfCanvasViewer fileData={item.fileData} fileName={item.fileName} />
       </div>
     );
   }
@@ -215,6 +207,280 @@ export function DocumentPreviewViewer({ item }: { item: PreviewItem | null }) {
       </div>
 
       <p className="text-[10px] text-slate-400 mt-4 leading-normal">Por favor, presione el botón de descarga para operar sobre el archivo localmente.</p>
+    </div>
+  );
+}
+
+function PdfCanvasViewer({ fileData, fileName }: { fileData: string; fileName: string }) {
+  const [pdfjs, setPdfjs] = useState<any>(null);
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [pageNum, setPageNum] = useState<number>(1);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [scale, setScale] = useState<number>(1.25);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [errorOriginal, setErrorOriginal] = useState<string | null>(null);
+  const [scriptFailed, setScriptFailed] = useState<boolean>(false);
+  
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const renderTaskRef = useRef<any>(null);
+
+  // 1. Load PDFJS from CDN
+  useEffect(() => {
+    let active = true;
+    
+    if ((window as any).pdfjsLib) {
+      if (active) {
+        setPdfjs((window as any).pdfjsLib);
+      }
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+    script.async = true;
+    
+    script.onload = () => {
+      if (!active) return;
+      try {
+        const pdfjsLib = (window as any).pdfjsLib;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+        setPdfjs(pdfjsLib);
+      } catch (err) {
+        console.error("Error setting up PDFWorker:", err);
+        setScriptFailed(true);
+      }
+    };
+
+    script.onerror = () => {
+      if (active) {
+        setScriptFailed(true);
+      }
+    };
+
+    document.head.appendChild(script);
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // 2. Load the base64 content
+  useEffect(() => {
+    if (!pdfjs || !fileData) return;
+    
+    let active = true;
+    setLoading(true);
+    setErrorOriginal(null);
+
+    const loadPdf = async () => {
+      try {
+        const base64Clean = fileData.split(';base64,')[1] || fileData;
+        const binaryString = atob(base64Clean);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const loadingTask = pdfjs.getDocument({ data: bytes });
+        const pdf = await loadingTask.promise;
+        
+        if (active) {
+          setPdfDoc(pdf);
+          setNumPages(pdf.numPages);
+          setPageNum(1);
+          setLoading(false);
+        }
+      } catch (err: any) {
+        console.error("PDF loading error:", err);
+        if (active) {
+          setErrorOriginal(err?.message || "No se pudo interpretar el archivo PDF.");
+          setLoading(false);
+        }
+      }
+    };
+
+    loadPdf();
+
+    return () => {
+      active = false;
+    };
+  }, [pdfjs, fileData]);
+
+  // 3. Render page
+  useEffect(() => {
+    if (!pdfDoc) return;
+    
+    let active = true;
+    
+    const renderPage = async () => {
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        if (!active) return;
+        
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const context = canvas.getContext('2d');
+        if (!context) return;
+        
+        const viewport = page.getViewport({ scale });
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport
+        };
+        
+        if (renderTaskRef.current) {
+          renderTaskRef.current.cancel();
+        }
+        
+        const renderTask = page.render(renderContext);
+        renderTaskRef.current = renderTask;
+        
+        await renderTask.promise;
+        if (active) {
+          renderTaskRef.current = null;
+        }
+      } catch (err: any) {
+        if (err.name !== 'RenderingCancelledException') {
+          console.error("Page render error:", err);
+        }
+      }
+    };
+
+    renderPage();
+
+    return () => {
+      active = false;
+      if (renderTaskRef.current) {
+        renderTaskRef.current.cancel();
+      }
+    };
+  }, [pdfDoc, pageNum, scale]);
+
+  const handlePrevPage = () => {
+    setPageNum(prev => Math.max(1, prev - 1));
+  };
+
+  const handleNextPage = () => {
+    setPageNum(prev => Math.min(numPages, prev + 1));
+  };
+
+  const handleZoomIn = () => {
+    setScale(prev => Math.min(3.0, prev + 0.25));
+  };
+
+  const handleZoomOut = () => {
+    setScale(prev => Math.max(0.5, prev - 0.25));
+  };
+
+  if (scriptFailed) {
+    const backupUrl = fileData.startsWith('data:') ? fileData : `data:application/pdf;base64,${fileData}`;
+    return (
+      <div className="w-full flex flex-col gap-3 h-full">
+        <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs space-y-2">
+          <p className="font-bold">Aviso del Sistema:</p>
+          <p>No se pudo inicializar el renderizador dinámico. Puedes abrir el recurso en una pestaña nueva o descargarlo:</p>
+          <div className="flex gap-2 pt-1">
+            <a 
+              href={backupUrl} 
+              target="_blank" 
+              rel="noreferrer"
+              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 font-bold rounded-xl text-white text-[11px] text-center"
+            >
+              Abrir PDF en otra pestaña
+            </a>
+          </div>
+        </div>
+        <div className="w-full h-[400px] border border-slate-200 rounded-2xl overflow-hidden">
+          <iframe src={backupUrl} className="w-full h-full" title={fileName} />
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 min-h-[400px] gap-3 text-slate-400">
+        <RefreshCw className="animate-spin text-rose-500" size={28} />
+        <p className="text-xs font-bold text-center">Cargando visor interactivo de alta precisión...</p>
+        <p className="text-[10px] text-slate-400 italic">Procesando páginas del PDF...</p>
+      </div>
+    );
+  }
+
+  if (errorOriginal) {
+    return (
+      <div className="p-6 text-center text-rose-600 flex flex-col items-center justify-center gap-3">
+        <AlertCircle size={32} />
+        <p className="text-xs font-bold font-mono">Error al procesar el archivo PDF.</p>
+        <p className="text-[10px] text-slate-500 max-w-sm mt-1">{errorOriginal}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+      {/* Precision Navigation Control Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-2 border-b border-slate-150 z-20 shrink-0">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+          <button
+            onClick={handlePrevPage}
+            disabled={pageNum <= 1}
+            className="p-1.5 hover:bg-white rounded-lg text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+            title="Página Anterior"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          
+          <span className="text-[11px] font-bold text-slate-700 px-2 min-w-[75px] text-center select-none">
+            {pageNum} / {numPages}
+          </span>
+
+          <button
+            onClick={handleNextPage}
+            disabled={pageNum >= numPages}
+            className="p-1.5 hover:bg-white rounded-lg text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+            title="Página Siguiente"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl font-mono text-[11px]">
+          <button
+            onClick={handleZoomOut}
+            disabled={scale <= 0.6}
+            className="p-1.5 hover:bg-white rounded-lg text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+            title="Alejar Zoom"
+          >
+            <ZoomOut size={14} />
+          </button>
+          
+          <span className="font-bold text-slate-650 px-1 text-center min-w-[45px] select-none">
+            {Math.round(scale * 100)}%
+          </span>
+
+          <button
+            onClick={handleZoomIn}
+            disabled={scale >= 3.0}
+            className="p-1.5 hover:bg-white rounded-lg text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+            title="Acercar Zoom"
+          >
+            <ZoomIn size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Canvas View Area */}
+      <div className="w-full overflow-auto max-h-[500px] bg-slate-100 p-4 flex items-start justify-center custom-scrollbar shadow-inner select-none animate-fadeIn">
+        <div className="bg-white p-1 rounded-xl shadow-lg border border-slate-200">
+          <canvas ref={canvasRef} className="max-w-full rounded-lg" />
+        </div>
+      </div>
     </div>
   );
 }
