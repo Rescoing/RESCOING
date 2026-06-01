@@ -377,8 +377,8 @@ export default function AccountingView() {
     const rows = Object.entries(accountSumMap).map(([code, sums]) => {
       const accountDef = chartOfAccounts.find(a => a.code === code) || { name: 'Cuenta Desconocida', type: 'Activo' as const };
       
-      const debit = sums.debit;
-      const credit = sums.credit;
+      const debit = Math.round(sums.debit);
+      const credit = Math.round(sums.credit);
       
       // Saldos (Debtor OR Creditor)
       let saldoDeudor = 0;
@@ -434,7 +434,7 @@ export default function AccountingView() {
     // Difference checks (Utilidad o Pérdida del Ejercicio)
     const diffInventario = Math.abs(totalSumActivo - totalSumPasivo);
     const diffResultados = Math.abs(totalSumPerdida - totalSumGanancia);
-    const balancedCheck = Math.abs(diffInventario - diffResultados) < 2; // tolerating minor rounding differences
+    const balancedCheck = Math.abs(diffInventario - diffResultados) < 10; // tolerating minor rounding differences with whole integer precision
 
     return {
       rows,
