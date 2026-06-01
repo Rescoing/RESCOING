@@ -84,8 +84,7 @@ export default function LibraryView() {
     if (!user) return;
 
     const q = query(
-      collection(db, 'library'),
-      where('ownerId', '==', user.uid)
+      collection(db, 'library')
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {

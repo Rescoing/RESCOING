@@ -107,11 +107,21 @@ service cloud.firestore {
         && collectionName in [
           'contacts', 'projects', 'inventory', 'riskRecords', 
           'employees', 'suppliers', 'invoices', 'financeProcesses', 
-          'financeTasks', 'documents', 'library', 'folioCounters',
+          'financeTasks', 'documents', 'folioCounters',
           'attendance', 'payrolls', 'purchaseInvoices', 'paymentNotices',
           'notifications', 'inventory_movements', 'systemLogs', 'siiDocuments',
           'accountingEntries'
         ];
+      allow update: if isApproved() && (isOwner(existing().ownerId) || isAdmin())
+        && incoming().ownerId == existing().ownerId
+        && isValidId(docId);
+      allow delete: if isApproved() && (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    // --- Library Collection (Shared within the ERP for all approved users) ---
+    match /library/{docId} {
+      allow read, list: if isApproved() && isValidId(docId);
+      allow create: if isApproved() && (isOwner(incoming().ownerId) || isAdmin()) && isValidId(docId);
       allow update: if isApproved() && (isOwner(existing().ownerId) || isAdmin())
         && incoming().ownerId == existing().ownerId
         && isValidId(docId);
