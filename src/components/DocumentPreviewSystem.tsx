@@ -11,7 +11,9 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -220,9 +222,21 @@ function PdfCanvasViewer({ fileData, fileName }: { fileData: string; fileName: s
   const [loading, setLoading] = useState<boolean>(true);
   const [errorOriginal, setErrorOriginal] = useState<string | null>(null);
   const [scriptFailed, setScriptFailed] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<any>(null);
+
+  // Esc listener to exit fullscreen
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
 
   // 1. Load PDFJS from CDN
   useEffect(() => {
@@ -423,61 +437,126 @@ function PdfCanvasViewer({ fileData, fileName }: { fileData: string; fileName: s
   }
 
   return (
-    <div className="w-full flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+    <div className={
+      isFullscreen 
+        ? "fixed inset-0 z-[120] flex flex-col bg-slate-950 overflow-hidden leading-none select-none transition-all duration-300" 
+        : "w-full flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all duration-300"
+    }>
       {/* Precision Navigation Control Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-2 border-b border-slate-150 z-20 shrink-0">
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+      <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b z-25 shrink-0 ${
+        isFullscreen ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-150 text-slate-700'
+      }`}>
+        {/* Navigation Controls Group */}
+        <div className={`flex items-center gap-1.5 p-1 rounded-xl ${
+          isFullscreen ? 'bg-slate-800' : 'bg-slate-100'
+        }`}>
           <button
             onClick={handlePrevPage}
             disabled={pageNum <= 1}
-            className="p-1.5 hover:bg-white rounded-lg text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+            className={`p-1.5 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer ${
+              isFullscreen ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-white text-slate-700'
+            }`}
             title="Página Anterior"
           >
             <ChevronLeft size={16} />
           </button>
           
-          <span className="text-[11px] font-bold text-slate-700 px-2 min-w-[75px] text-center select-none">
+          <span className={`text-[11px] font-bold px-2 min-w-[75px] text-center select-none ${
+            isFullscreen ? 'text-slate-300' : 'text-slate-700'
+          }`}>
             {pageNum} / {numPages}
           </span>
 
           <button
             onClick={handleNextPage}
             disabled={pageNum >= numPages}
-            className="p-1.5 hover:bg-white rounded-lg text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+            className={`p-1.5 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer ${
+              isFullscreen ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-white text-slate-700'
+            }`}
             title="Página Siguiente"
           >
             <ChevronRight size={16} />
           </button>
         </div>
 
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl font-mono text-[11px]">
+        {/* Zoom Controls Group */}
+        <div className={`flex items-center gap-1.5 p-1 rounded-xl font-mono text-[11px] ${
+          isFullscreen ? 'bg-slate-800' : 'bg-slate-100'
+        }`}>
           <button
             onClick={handleZoomOut}
             disabled={scale <= 0.6}
-            className="p-1.5 hover:bg-white rounded-lg text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+            className={`p-1.5 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer ${
+              isFullscreen ? 'hover:bg-slate-700 text-slate-250' : 'hover:bg-white text-slate-700'
+            }`}
             title="Alejar Zoom"
           >
             <ZoomOut size={14} />
           </button>
           
-          <span className="font-bold text-slate-650 px-1 text-center min-w-[45px] select-none">
+          <span className={`font-bold px-1 text-center min-w-[45px] select-none ${
+            isFullscreen ? 'text-slate-300' : 'text-slate-650'
+          }`}>
             {Math.round(scale * 100)}%
           </span>
 
           <button
             onClick={handleZoomIn}
             disabled={scale >= 3.0}
-            className="p-1.5 hover:bg-white rounded-lg text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+            className={`p-1.5 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer ${
+              isFullscreen ? 'hover:bg-slate-700 text-slate-250' : 'hover:bg-white text-slate-700'
+            }`}
             title="Acercar Zoom"
           >
             <ZoomIn size={14} />
           </button>
         </div>
+
+        {/* Filename & Fullscreen Actions Group */}
+        <div className="flex items-center gap-3">
+          {isFullscreen && (
+            <div className="hidden lg:flex items-center gap-1.5 max-w-[200px] xl:max-w-[400px] min-w-0 mr-2 border-r border-slate-800 pr-4">
+              <span className="text-[10px] uppercase font-black tracking-wider text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">PLANO / SPEC</span>
+              <span className="text-xs font-bold truncate text-slate-300" title={fileName}>
+                {fileName}
+              </span>
+            </div>
+          )}
+
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer shadow-sm ${
+              isFullscreen 
+                ? 'bg-rose-600/90 text-white hover:bg-rose-600 border border-rose-750 hover:shadow-lg' 
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-md'
+            }`}
+            title={isFullscreen ? "Salir de Pantalla Completa (Esc)" : "Pantalla Completa"}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize2 size={14} />
+                <span className="hidden sm:inline">Normal (Esc)</span>
+                <span className="sm:hidden">Normal</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 size={14} />
+                <span>Pantalla Completa</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Canvas View Area */}
-      <div className="w-full overflow-auto max-h-[500px] bg-slate-100 p-4 flex items-start justify-center custom-scrollbar shadow-inner select-none animate-fadeIn">
-        <div className="bg-white p-1 rounded-xl shadow-lg border border-slate-200">
+      <div className={`w-full overflow-auto flex items-start justify-center custom-scrollbar shadow-inner select-none animate-fadeIn ${
+        isFullscreen 
+          ? 'flex-1 bg-slate-950 p-6 md:p-12' 
+          : 'max-h-[500px] bg-slate-100 p-4'
+      }`}>
+        <div className={`p-1 rounded-xl shadow-lg border transition-all duration-200 ${
+          isFullscreen ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
           <canvas ref={canvasRef} className="max-w-full rounded-lg" />
         </div>
       </div>

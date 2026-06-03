@@ -37,7 +37,7 @@ import { useAuth } from './FirebaseProvider';
 import { SystemLog, AccountingEntry, Invoice, PurchaseInvoice, Payroll, Item, Employee } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 const ACTION_DESCRIPTIONS: { [key: string]: { label: string, color: string } } = {
   'create': { label: 'Creación', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -746,7 +746,7 @@ export default function AuditLogView() {
         ]
       ];
 
-      (pdf as any).autoTable({
+      autoTable(pdf, {
         startY: 65,
         head: [tableData[0]],
         body: tableData.slice(1),

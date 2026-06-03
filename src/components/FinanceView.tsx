@@ -31,7 +31,7 @@ import { Invoice, FinanceProcess, FinanceTask, PurchaseInvoice, Payroll, Documen
 import Modal from './ui/Modal';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
@@ -628,7 +628,7 @@ Departamento de Cobranzas / ERP Rescoing`;
       `$${inv.totalAmount.toLocaleString()}`
     ]);
 
-    doc.autoTable({
+    autoTable(doc, {
       startY: 45,
       head: [['Referencia', 'Cliente', 'Medio Pago', 'Estado', 'Fecha', 'Total']],
       body: tableData,
