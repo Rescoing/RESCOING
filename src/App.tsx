@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -29,7 +29,12 @@ import {
   Shield,
   Bell,
   History,
-  Scale
+  Scale,
+  Wifi,
+  WifiOff,
+  Cloud,
+  CloudOff,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Module, Item, Contact, Project, Invoice, Document, Supplier, Employee, FinanceProcess, FinanceTask, RiskPreventionRecord } from './types';
@@ -49,7 +54,7 @@ import { FirebaseProvider, useAuth } from './components/FirebaseProvider';
 import InternalChatWidget from './components/InternalChatWidget';
 import LoginView from './components/LoginView';
 import SettingsModal from './components/SettingsModal';
-import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, orderBy, disableNetwork, enableNetwork } from 'firebase/firestore';
 import { db } from './lib/firebase';
 
 export default function App() {
@@ -65,6 +70,66 @@ function AppContent() {
   const [activeModule, setActiveModule] = useState<Module>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Real-time network and Offline mode simulation states
+  const [isOnline, setIsOnline] = useState(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [isOfflineSimulated, setIsOfflineSimulated] = useState(() => {
+    return localStorage.getItem('offline_simulated') === 'true';
+  });
+  const [isOfflinePopoverOpen, setIsOfflinePopoverOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const isInitialMount = useRef(true);
+
+  useEffect(() => {
+    const syncNetworkState = async () => {
+      const targetOffline = !isOnline || isOfflineSimulated;
+      
+      // On initial mount, if we are in the default ONLINE state, do not perform any Firestore network transition call
+      // to avoid interrupting/interfering with concurrent onSnapshot handshakes.
+      if (isInitialMount.current) {
+        isInitialMount.current = false;
+        if (!targetOffline) {
+          return;
+        }
+      }
+
+      try {
+        if (targetOffline) {
+          await disableNetwork(db);
+          console.log("Firestore network operations toggled to: OFFLINE.");
+        } else {
+          try {
+            await enableNetwork(db);
+            console.log("Firestore network operations toggled to: ONLINE.");
+          } catch (err: any) {
+            console.warn("Firestore enableNetwork warning:", err);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to sync Firestore network state:", err);
+      }
+    };
+    
+    // Add a slight delay to allow current active listeners to start up cleanly before any connection state updates
+    const timer = setTimeout(() => {
+      syncNetworkState();
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [isOnline, isOfflineSimulated]);
 
   // Global Shared State
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -326,6 +391,105 @@ function AppContent() {
                 placeholder="Buscar recursos..." 
                 className="w-64 h-9 bg-slate-50 border border-slate-200 rounded-md px-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-sans"
               />
+            </div>
+
+            {/* Control e Indicador de Conexión / Trabajo Offline */}
+            <div className="relative">
+              <button
+                onClick={() => setIsOfflinePopoverOpen(!isOfflinePopoverOpen)}
+                className={`h-9 px-3.5 rounded-lg text-xs font-bold transition-all relative flex items-center gap-2 border shadow-sm cursor-pointer select-none ${
+                  (!isOnline || isOfflineSimulated)
+                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100/90 animate-pulse'
+                    : 'bg-emerald-50 text-slate-700 border-slate-200 hover:bg-emerald-100/40 hover:border-emerald-250 hover:text-emerald-800'
+                }`}
+                title={(!isOnline || isOfflineSimulated) ? "Trabajando en Local (Sin Conexión)" : "Sincronizado / En Línea"}
+              >
+                {(!isOnline || isOfflineSimulated) ? (
+                  <>
+                    <WifiOff size={15} className="text-amber-605 text-amber-600 shrink-0" />
+                    <span className="hidden leading-none lg:inline">Modo Local (Offline)</span>
+                    <span className="lg:hidden leading-none">Local</span>
+                  </>
+                ) : (
+                  <>
+                    <Wifi size={15} className="text-emerald-500 shrink-0" />
+                    <span className="hidden leading-none lg:inline">En Línea</span>
+                    <span className="lg:hidden leading-none">Online</span>
+                  </>
+                )}
+              </button>
+
+              <AnimatePresence>
+                {isOfflinePopoverOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsOfflinePopoverOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 mt-2 w-80 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden z-50 text-left p-4 space-y-3"
+                    >
+                      <div className="flex items-center gap-2 border-b pb-2">
+                        {(!isOnline || isOfflineSimulated) ? (
+                          <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                            <WifiOff size={16} />
+                          </div>
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
+                            <Wifi size={16} />
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-xs font-black text-slate-800">Estado de la Base de Datos</p>
+                          <p className={`text-[10px] font-bold ${(!isOnline || isOfflineSimulated) ? 'text-amber-600' : 'text-emerald-600'}`}>
+                            {(!isOnline || isOfflineSimulated) ? 'Modo de Persistencia Local Activo' : 'Conectado al Servidor en la Nube'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 text-xs leading-relaxed text-slate-600">
+                        <p>
+                          {(!isOnline || isOfflineSimulated) ? (
+                            "Estás trabajando de manera local con caché persistente offline. Puedes seguir usando todo el ERP (CRM, Proyectos, Biblioteca, Finanzas). Al volver a conectarte, tus cambios se sincronizarán en la nube automáticamente."
+                          ) : (
+                            "Tu conexión es estable y todos tus datos (incluyendo fotos, proyectos, cotizaciones y logs) están sincronizados con la nube en tiempo real."
+                          )}
+                        </p>
+                        
+                        <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl flex gap-2 items-start text-[10px] text-slate-550">
+                          <Info size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                          <span>
+                            <strong>Red física:</strong> {isOnline ? 'Internet Conectado' : 'Conexión Perdida'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="border-t pt-2 mt-2 flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextState = !isOfflineSimulated;
+                            setIsOfflineSimulated(nextState);
+                            localStorage.setItem('offline_simulated', String(nextState));
+                            setIsOfflinePopoverOpen(false);
+                          }}
+                          className={`w-full py-2 px-3 rounded-xl text-xs font-bold transition-all text-center cursor-pointer shadow-sm border ${
+                            isOfflineSimulated
+                              ? 'bg-indigo-600 border-indigo-600 hover:bg-indigo-700 text-white'
+                              : 'bg-amber-50 border-amber-100 hover:bg-amber-100 text-amber-850'
+                          }`}
+                        >
+                          {isOfflineSimulated 
+                            ? '🔌 Conectar Servidor' 
+                            : '⚡ Trabajar Sin Conexión'
+                          }
+                        </button>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Notification Bell Component */}

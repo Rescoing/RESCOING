@@ -175,7 +175,8 @@
         "fileType": { "type": "string" },
         "fileData": { "type": "string", "description": "Base64 or URL" },
         "folio": { "type": "number" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "tags": { "type": "array", "description": "Etiquetas/Proyectos de clasificación" }
       },
       "required": ["ownerId", "name", "docType", "fileName", "folio"]
     },
