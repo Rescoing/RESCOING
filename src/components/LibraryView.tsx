@@ -18,6 +18,7 @@ import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
 import Modal from './ui/Modal';
 import { DocumentPreviewViewer } from './DocumentPreviewSystem';
+import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
 
 interface LibraryItem {
   id: string;
@@ -119,7 +120,12 @@ export default function LibraryView() {
   const [uploading, setUploading] = useState(false);
   const [previewItem, setPreviewItem] = useState<LibraryItem | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [uploadQueue, setUploadQueue] = useState<{file: File, status: 'pending' | 'uploading' | 'complete' | 'error', progress: number}[]>([]);
+  const [uploadQueue, setUploadQueue] = useState<{
+    file: File;
+    status: 'pending' | 'uploading' | 'complete' | 'error';
+    progress: number;
+    errorMsg?: string;
+  }[]>([]);
   
   // Folder navigation state
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -199,8 +205,8 @@ export default function LibraryView() {
       setUploadQueue([...queue]);
 
       try {
-        if (currentFile.size > 2000000) {
-          throw new Error("Archivo muy pesado (máx 2MB)");
+        if (currentFile.size > 700000) {
+          throw new Error("Límite de tamaño excedido (máx 700KB por bases de datos de Firestore)");
         }
 
         const base64 = await new Promise<string>((resolve, reject) => {
@@ -213,7 +219,12 @@ export default function LibraryView() {
         queue[i].progress = 50;
         setUploadQueue([...queue]);
 
-        const counterId = `${user.uid}_${formData.docType.toLowerCase().replace(/\s+/g, '_')}`;
+        const normalizedDocType = formData.docType
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9_-]/g, "_");
+        const counterId = `${user.uid}_${normalizedDocType}`;
         const counterRef = doc(db, 'folioCounters', counterId);
 
         await runTransaction(db, async (transaction) => {
@@ -252,10 +263,19 @@ export default function LibraryView() {
         queue[i].status = 'complete';
         queue[i].progress = 100;
         setUploadQueue([...queue]);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error processing file:", error);
         queue[i].status = 'error';
+        queue[i].errorMsg = error instanceof Error ? error.message : String(error);
         setUploadQueue([...queue]);
+        
+        if (error && (error?.code === 'permission-denied' || error?.message?.includes('permission'))) {
+          try {
+            handleFirestoreError(error, OperationType.WRITE, `library_${currentFile.name}`);
+          } catch (e) {
+            console.error("Intercepted permissions error:", e);
+          }
+        }
       }
     }
 
@@ -1031,7 +1051,7 @@ export default function LibraryView() {
 
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-              Seleccionar Archivos (Máx 2MB por archivo)
+              Seleccionar Archivos (Máx 700KB por archivo)
             </label>
             <div 
               onClick={() => fileInputRef.current?.click()}
@@ -1077,7 +1097,14 @@ export default function LibraryView() {
                       </div>
                     )}
                     {q.status === 'complete' && <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">✓ Listo</span>}
-                    {q.status === 'error' && <span className="text-xs text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded-full">Error</span>}
+                    {q.status === 'error' && (
+                      <span 
+                        className="text-xs text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded-full cursor-help"
+                        title={q.errorMsg || "Error al subir"}
+                      >
+                        {q.errorMsg ? `Error: ${q.errorMsg}` : "Error"}
+                      </span>
+                    )}
                     {q.status === 'pending' && !uploading && (
                       <button 
                         onClick={() => setUploadQueue(prev => prev.filter((_, i) => i !== idx))}

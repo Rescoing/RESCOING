@@ -354,9 +354,40 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "folio", "date", "glosa", "items"]
+    },
+    "CompanySettings": {
+      "title": "Company Settings",
+      "description": "Global corporate configurations like name, logo, information, and logo.",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string" },
+        "companyRut": { "type": "string" },
+        "companyAddress": { "type": "string" },
+        "companyPhone": { "type": "string" },
+        "companyLogo": { "type": "string" },
+        "companyEmail": { "type": "string" },
+        "companyWebsite": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      }
+    },
+    "BasicAccountSettings": {
+      "title": "Basic Account Settings",
+      "description": "Basic account details of users under settings collection.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "email": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "firestore": {
+    "/settings/{settingsId}": {
+      "schema": "CompanySettings",
+      "description": "App settings configuration documents"
+    },
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User profile and company settings"

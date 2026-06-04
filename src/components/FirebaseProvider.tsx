@@ -26,6 +26,41 @@ interface UserProfile {
   updatedAt?: any;
 }
 
+export interface CompanySettings {
+  companyName?: string;
+  companyRut?: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  companyLogo?: string;
+  companyEmail?: string;
+  companyWebsite?: string;
+}
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
@@ -35,6 +70,8 @@ interface AuthContextType {
   registerWithEmail: (email: string, pass: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
+  updateCompanySettings: (data: Partial<CompanySettings>) => Promise<void>;
+  updateAccountSettings: (data: { displayName?: string; photoURL?: string; email?: string }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,6 +79,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,12 +87,14 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       setUser(user);
       if (!user) {
         setProfile(null);
+        setCompanySettings(null);
         setLoading(false);
       }
     });
     return unsubscribe;
   }, []);
 
+  // Subscribe to profile changes
   useEffect(() => {
     if (!user) return;
 
@@ -165,6 +205,34 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, [user]);
 
+  // Subscribe to global company settings
+  useEffect(() => {
+    if (!user || !profile) {
+      setCompanySettings(null);
+      return;
+    }
+
+    // Only subscribe to settings if the user is approved or an admin
+    const isApprovedUser = profile.role === 'admin' || profile.accessStatus === 'approved';
+    if (!isApprovedUser) {
+      setCompanySettings(null);
+      return;
+    }
+
+    const companyDocRef = doc(db, 'settings', 'company');
+    const unsubscribe = onSnapshot(companyDocRef, (snap) => {
+      if (snap.exists()) {
+        setCompanySettings(snap.data() as CompanySettings);
+      } else {
+        setCompanySettings(null);
+      }
+    }, (error) => {
+      console.warn("Global settings access is restricted or loading: ", error);
+    });
+
+    return unsubscribe;
+  }, [user, profile?.accessStatus, profile?.role]);
+
   const login = async () => {
     const provider = new GoogleAuthProvider();
     await signInWithPopup(auth, provider);
@@ -189,11 +257,68 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     await setDoc(docRef, { ...profile, ...data, updatedAt: new Date().toISOString() }, { merge: true });
   };
 
+  const updateCompanySettings = async (data: Partial<CompanySettings>) => {
+    if (!user || profile?.role !== 'admin') return;
+    const docRef = doc(db, 'settings', 'company');
+    try {
+      await setDoc(docRef, {
+        ...data,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.email || user.uid
+      }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'settings/company');
+    }
+  };
+
+  const updateAccountSettings = async (data: { displayName?: string; photoURL?: string; email?: string }) => {
+    if (!user || profile?.role !== 'admin') return;
+    const docRef = doc(db, 'settings', `account_${user.uid}`);
+    try {
+      // Save inside 'settings' collection
+      await setDoc(docRef, {
+        ...data,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      // Also update standard user profile so it syncs immediately in UI
+      const userDocRef = doc(db, 'users', user.uid);
+      await setDoc(userDocRef, {
+        displayName: data.displayName ?? profile.displayName,
+        photoURL: data.photoURL ?? profile.photoURL,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      // If user profile object is loaded, also update the Auth profile 
+      if (data.displayName && auth.currentUser) {
+        await updateAuthProfile(auth.currentUser, {
+          displayName: data.displayName,
+          photoURL: data.photoURL || undefined
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `settings/account_${user.uid}`);
+    }
+  };
+
+  // Merge companySettings into the exposed profile
+  const mergedProfile: UserProfile | null = profile ? {
+    ...profile,
+    companyName: companySettings?.companyName ?? profile.companyName,
+    companyRut: companySettings?.companyRut ?? profile.companyRut,
+    companyAddress: companySettings?.companyAddress ?? profile.companyAddress,
+    companyPhone: companySettings?.companyPhone ?? profile.companyPhone,
+    companyLogo: companySettings?.companyLogo ?? profile.companyLogo,
+    companyEmail: companySettings?.companyEmail ?? profile.companyEmail,
+    companyWebsite: companySettings?.companyWebsite ?? profile.companyWebsite,
+  } : null;
+
   return (
     <AuthContext.Provider value={{ 
-      user, profile, loading, login, 
+      user, profile: mergedProfile, loading, login, 
       loginWithEmail, registerWithEmail, 
-      logout, updateProfile 
+      logout, updateProfile,
+      updateCompanySettings, updateAccountSettings
     }}>
       {children}
     </AuthContext.Provider>

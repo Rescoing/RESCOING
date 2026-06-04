@@ -47,6 +47,13 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == ownerId;
     }
 
+    // --- Application / Company Settings ---
+    match /settings/{settingsId} {
+      allow read, list: if isApproved();
+      allow create, update: if isAdmin() && isValidId(settingsId);
+      allow delete: if isAdmin();
+    }
+
     // --- User Profiles & Company Settings ---
     match /users/{userId} {
       allow list: if isSignedIn();
