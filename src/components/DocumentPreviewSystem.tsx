@@ -16,6 +16,7 @@ import {
   Minimize2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { decompressFileGzip } from '../lib/compression';
 
 interface PreviewItem {
   id: string;
@@ -23,6 +24,7 @@ interface PreviewItem {
   fileName: string;
   fileType: string;
   fileData: string; // Base64 loaded string
+  isCompressed?: boolean;
 }
 
 // Memory-safe hook to convert Base64 strings to Blob URLs for lightning-fast rendering
@@ -71,12 +73,55 @@ export function useBlobUrl(base64Data: string, fileType: string) {
   return blobUrl;
 }
 
-export function DocumentPreviewViewer({ item }: { item: PreviewItem | null }) {
+export function DocumentPreviewViewer({ item: rootItem }: { item: PreviewItem | null }) {
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
-  const blobUrl = useBlobUrl(item?.fileData || '', item?.fileType || '');
+  const [activeItem, setActiveItem] = useState<PreviewItem | null>(null);
+  const [decompressing, setDecompressing] = useState(false);
 
-  if (!item) return null;
+  useEffect(() => {
+    if (!rootItem) {
+      setActiveItem(null);
+      return;
+    }
+
+    if (rootItem.isCompressed) {
+      setDecompressing(true);
+      decompressFileGzip(rootItem.fileData, rootItem.fileType)
+        .then(data => {
+          setActiveItem({
+            ...rootItem,
+            fileData: data,
+            isCompressed: false
+          });
+        })
+        .catch(err => {
+          console.error("Decompression failed", err);
+          setActiveItem(rootItem);
+        })
+        .finally(() => {
+          setDecompressing(false);
+        });
+    } else {
+      setActiveItem(rootItem);
+    }
+  }, [rootItem]);
+
+  const blobUrl = useBlobUrl(activeItem?.fileData || '', activeItem?.fileType || '');
+
+  if (!rootItem) return null;
+
+  if (decompressing) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 h-64 text-slate-500 gap-3">
+        <RotateCw className="animate-spin text-primary" size={24} />
+        <span className="text-xs font-bold">Descomprimiendo archivo para visualización...</span>
+      </div>
+    );
+  }
+
+  if (!activeItem) return null;
+  const item = activeItem;
 
   const handleZoomIn = () => setZoom(prev => Math.min(300, prev + 25));
   const handleZoomOut = () => setZoom(prev => Math.max(50, prev - 25));

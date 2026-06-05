@@ -19,6 +19,7 @@ import { useAuth } from './FirebaseProvider';
 import Modal from './ui/Modal';
 import { DocumentPreviewViewer } from './DocumentPreviewSystem';
 import { handleFirestoreError, OperationType } from '../lib/firebaseUtils';
+import { compressFileGzip, compressImageUsingCanvas, decompressFileGzip } from '../lib/compression';
 
 interface LibraryItem {
   id: string;
@@ -27,6 +28,7 @@ interface LibraryItem {
   fileName: string;
   fileType: string;
   fileData: string;
+  isCompressed?: boolean;
   folio: number;
   ownerId: string;
   createdAt: any;
@@ -205,16 +207,37 @@ export default function LibraryView() {
       setUploadQueue([...queue]);
 
       try {
-        if (currentFile.size > 700000) {
-          throw new Error("Límite de tamaño excedido (máx 700KB por bases de datos de Firestore)");
-        }
+        let base64 = '';
+        let isCompressed = false;
 
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(currentFile);
-        });
+        if (currentFile.size > 700000) {
+          queue[i].progress = 15;
+          setUploadQueue([...queue]);
+          
+          if (currentFile.type.startsWith('image/') && !currentFile.type.includes('gif') && !currentFile.type.includes('svg')) {
+            try {
+              const res = await compressImageUsingCanvas(currentFile);
+              base64 = res.base64;
+              isCompressed = false; // Canvas output is normal image base64, no decompression needed
+            } catch (err) {
+              console.warn("Canvas image compression failed, falling back to gzip", err);
+              const res = await compressFileGzip(currentFile);
+              base64 = res.base64;
+              isCompressed = true;
+            }
+          } else {
+            const res = await compressFileGzip(currentFile);
+            base64 = res.base64;
+            isCompressed = true;
+          }
+        } else {
+          base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(currentFile);
+          });
+        }
 
         queue[i].progress = 50;
         setUploadQueue([...queue]);
@@ -249,6 +272,7 @@ export default function LibraryView() {
             fileName: currentFile.name,
             fileType: currentFile.type || getFileTypeByName(currentFile.name),
             fileData: base64,
+            isCompressed: isCompressed,
             folio: nextFolio,
             ownerId: user.uid,
             uploadedBy: profile?.displayName || user.displayName || user.email?.split('@')[0] || 'Administrador',
@@ -389,10 +413,18 @@ export default function LibraryView() {
     }
   };
 
-  const handleDownload = (item: LibraryItem) => {
+   const handleDownload = async (item: LibraryItem) => {
     if (item.isFolder) return;
+    let dataUrl = item.fileData;
+    if (item.isCompressed) {
+      try {
+        dataUrl = await decompressFileGzip(item.fileData, item.fileType);
+      } catch (err) {
+        console.error("Error decompressing file for download:", err);
+      }
+    }
     const link = document.createElement('a');
-    link.href = item.fileData;
+    link.href = dataUrl;
     link.download = item.fileName;
     document.body.appendChild(link);
     link.click();
@@ -1051,7 +1083,7 @@ export default function LibraryView() {
 
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-              Seleccionar Archivos (Máx 700KB por archivo)
+              Seleccionar Archivos (Archivos de más de 700KB se comprimirán automáticamente)
             </label>
             <div 
               onClick={() => fileInputRef.current?.click()}
