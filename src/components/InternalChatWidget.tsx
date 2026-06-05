@@ -151,10 +151,14 @@ export default function InternalChatWidget() {
 
   // 2. Fetch both Direct messages AND Channel messages real-time
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setMessages([]);
+      return;
+    }
 
-    const directSentQuery = query(collection(db, 'internal_messages'), where('senderId', '==', user.uid), where('isGroup', '==', false));
-    const directRecvQuery = query(collection(db, 'internal_messages'), where('receiverId', '==', user.uid), where('isGroup', '==', false));
+    const userId = user.uid;
+    const directSentQuery = query(collection(db, 'internal_messages'), where('senderId', '==', userId), where('isGroup', '==', false));
+    const directRecvQuery = query(collection(db, 'internal_messages'), where('receiverId', '==', userId), where('isGroup', '==', false));
     const groupQuery = query(collection(db, 'internal_messages'), where('isGroup', '==', true));
 
     let directSentDocs: any[] = [];
@@ -173,50 +177,6 @@ export default function InternalChatWidget() {
       });
 
       setMessages(uniqueMessages);
-
-      if (uniqueMessages.length === 0) return;
-
-      const latestMsg = uniqueMessages[uniqueMessages.length - 1];
-      if (!latestMsg || latestMsg.senderId === user.uid) return;
-
-      // Ensure we only alert on brand new messages added during this session
-      if (latestMsg.id !== lastProcessedMsgId.current) {
-        lastProcessedMsgId.current = latestMsg.id;
-
-        const dateObj = latestMsg.createdAt?.seconds ? new Date(latestMsg.createdAt.seconds * 1000) : new Date(latestMsg.createdAt || 0);
-        const diffMs = Date.now() - dateObj.getTime();
-        
-        // Only alert if the message was sent in the last 15 seconds (prevents alert storm on initial sync)
-        if (diffMs < 15000) {
-          if (latestMsg.isGroup) {
-            // Channel message alert definition
-            const isCurrentlyViewingThisChannel = isOpen && tab === 'channels' && activeChannelId === latestMsg.channelId;
-            if (!isCurrentlyViewingThisChannel) {
-              playAlertSound();
-              setLatestToast({
-                id: latestMsg.id,
-                senderName: latestMsg.senderName || 'Colega',
-                content: latestMsg.content,
-                channelId: latestMsg.channelId,
-                isChannel: true
-              });
-            }
-          } else {
-            // Direct 1-on-1 message alert definition
-            const isCurrentlyViewingThisDirect = isOpen && tab === 'directs' && activeChatUserId === latestMsg.senderId;
-            if (!isCurrentlyViewingThisDirect) {
-              playAlertSound();
-              setLatestToast({
-                id: latestMsg.id,
-                senderName: latestMsg.senderName || 'Colega',
-                content: latestMsg.content,
-                senderId: latestMsg.senderId,
-                isChannel: false
-              });
-            }
-          }
-        }
-      }
     };
 
     const unsubSent = onSnapshot(directSentQuery, (snapshot) => {
@@ -239,7 +199,54 @@ export default function InternalChatWidget() {
       unsubRecv();
       unsubGroup();
     };
-  }, [user, activeChannelId, activeChatUserId, tab, isOpen, soundEnabled]);
+  }, [user?.uid]);
+
+  // 3. Process sound and toast alerts when new messages arrive
+  useEffect(() => {
+    if (!user || messages.length === 0) return;
+
+    const latestMsg = messages[messages.length - 1];
+    if (!latestMsg || latestMsg.senderId === user.uid) return;
+
+    // Ensure we only alert on brand new messages added during this session
+    if (latestMsg.id !== lastProcessedMsgId.current) {
+      lastProcessedMsgId.current = latestMsg.id;
+
+      const dateObj = latestMsg.createdAt?.seconds ? new Date(latestMsg.createdAt.seconds * 1000) : new Date(latestMsg.createdAt || 0);
+      const diffMs = Date.now() - dateObj.getTime();
+      
+      // Only alert if the message was sent in the last 15 seconds (prevents alert storm on initial sync)
+      if (diffMs < 15000) {
+        if (latestMsg.isGroup) {
+          // Channel message alert definition
+          const isCurrentlyViewingThisChannel = isOpen && tab === 'channels' && activeChannelId === latestMsg.channelId;
+          if (!isCurrentlyViewingThisChannel) {
+            playAlertSound();
+            setLatestToast({
+              id: latestMsg.id,
+              senderName: latestMsg.senderName || 'Colega',
+              content: latestMsg.content,
+              channelId: latestMsg.channelId,
+              isChannel: true
+            });
+          }
+        } else {
+          // Direct 1-on-1 message alert definition
+          const isCurrentlyViewingThisDirect = isOpen && tab === 'directs' && activeChatUserId === latestMsg.senderId;
+          if (!isCurrentlyViewingThisDirect) {
+            playAlertSound();
+            setLatestToast({
+              id: latestMsg.id,
+              senderName: latestMsg.senderName || 'Colega',
+              content: latestMsg.content,
+              senderId: latestMsg.senderId,
+              isChannel: false
+            });
+          }
+        }
+      }
+    }
+  }, [messages, user?.uid, activeChannelId, activeChatUserId, tab, isOpen, soundEnabled]);
 
   // Scroll to bottom helper
   useEffect(() => {

@@ -148,7 +148,7 @@ function AppContent() {
       console.error("Contacts global listener error:", error);
     });
     return unsubscribe;
-  }, [user, profile]);
+  }, [user?.uid, profile?.accessStatus, profile?.role]);
 
   useEffect(() => {
     if (!user || (profile?.accessStatus !== 'approved' && profile?.role !== 'admin')) return;
@@ -165,7 +165,7 @@ function AppContent() {
       console.error("Notifications global listener error:", error);
     });
     return unsubscribe;
-  }, [user, profile]);
+  }, [user?.uid, profile?.accessStatus, profile?.role]);
 
   const markAllAsRead = async () => {
     try {

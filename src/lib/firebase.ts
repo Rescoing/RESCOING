@@ -3,7 +3,7 @@ import { getAuth } from 'firebase/auth';
 import { 
   initializeFirestore, 
   persistentLocalCache, 
-  persistentMultipleTabManager, 
+  persistentSingleTabManager, 
   doc, 
   getDocFromServer 
 } from 'firebase/firestore';
@@ -14,7 +14,7 @@ const app = initializeApp(firebaseConfig);
 // Configure Firestore with persistent local cache for offline work
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
+    tabManager: persistentSingleTabManager({})
   })
 }, firebaseConfig.firestoreDatabaseId);
 
