@@ -210,13 +210,14 @@ export default function LibraryView() {
         let base64 = '';
         let isCompressed = false;
 
-        if (currentFile.size > 700000) {
+        // Comprimir archivos de más de 350KB para evitar superar el límite de Firestore (1MB en Base64)
+        if (currentFile.size > 350000) {
           queue[i].progress = 15;
           setUploadQueue([...queue]);
           
           if (currentFile.type.startsWith('image/') && !currentFile.type.includes('gif') && !currentFile.type.includes('svg')) {
             try {
-              const res = await compressImageUsingCanvas(currentFile);
+              const res = await compressImageUsingCanvas(currentFile, 350000);
               base64 = res.base64;
               isCompressed = false; // Canvas output is normal image base64, no decompression needed
             } catch (err) {
@@ -237,6 +238,12 @@ export default function LibraryView() {
             reader.onerror = reject;
             reader.readAsDataURL(currentFile);
           });
+        }
+
+        // Validar el tamaño final del string Base64. 
+        // 950,000 caracteres como string Base64 se aproxima mucho al límite práctico de 1MB de Firestore, considerando metadatos adicionales.
+        if (base64.length > 950000) {
+          throw new Error("El archivo es demasiado grande (supera el límite de Firestore de 1MB incluso tras compresión). Por favor, suba un archivo más pequeño.");
         }
 
         queue[i].progress = 50;
@@ -290,7 +297,15 @@ export default function LibraryView() {
       } catch (error: any) {
         console.error("Error processing file:", error);
         queue[i].status = 'error';
-        queue[i].errorMsg = error instanceof Error ? error.message : String(error);
+        
+        let rawMessage = error instanceof Error ? error.message : String(error);
+        let friendlyMessage = rawMessage;
+
+        if (rawMessage.includes("cannot be written because its size") || rawMessage.includes("exceeds the maximum allowed size") || rawMessage.includes("límite de Firestore de 1MB")) {
+          friendlyMessage = "El archivo supera el límite de tamaño de Firestore (1MB, incluso tras compresión). Por favor, reduzca su tamaño o resolución antes de subirlo.";
+        }
+
+        queue[i].errorMsg = friendlyMessage;
         setUploadQueue([...queue]);
         
         if (error && (error?.code === 'permission-denied' || error?.message?.includes('permission'))) {
@@ -1111,15 +1126,22 @@ export default function LibraryView() {
           {uploadQueue.length > 0 && (
             <div className="max-h-60 overflow-y-auto border border-slate-150 rounded-xl divide-y divide-slate-100 bg-white">
               {uploadQueue.map((q, idx) => (
-                <div key={idx} className="p-3 flex items-center justify-between gap-3 bg-white">
-                  <div className="flex items-center gap-3 min-w-0">
-                    {getFileIcon(q.file.type, q.file.name)}
+                <div key={idx} className="p-3 flex items-start justify-between gap-3 bg-white">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="mt-0.5 shrink-0">
+                      {getFileIcon(q.file.type, q.file.name)}
+                    </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-800 truncate">{q.file.name}</p>
+                      <p className="text-xs font-bold text-slate-800 truncate" title={q.file.name}>{q.file.name}</p>
                       <p className="text-[10px] text-slate-400">{(q.file.size / 1024).toFixed(1)} KB</p>
+                      {q.status === 'error' && q.errorMsg && (
+                        <p className="text-[10px] text-rose-500 font-medium mt-1 break-all max-w-[320px] bg-rose-50/50 p-1.5 rounded-lg border border-rose-100">
+                          {q.errorMsg}
+                        </p>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 self-center">
                     {q.status === 'uploading' && (
                       <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div 
@@ -1131,10 +1153,10 @@ export default function LibraryView() {
                     {q.status === 'complete' && <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">✓ Listo</span>}
                     {q.status === 'error' && (
                       <span 
-                        className="text-xs text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded-full cursor-help"
+                        className="text-xs text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded-full cursor-help whitespace-nowrap"
                         title={q.errorMsg || "Error al subir"}
                       >
-                        {q.errorMsg ? `Error: ${q.errorMsg}` : "Error"}
+                        Error
                       </span>
                     )}
                     {q.status === 'pending' && !uploading && (
