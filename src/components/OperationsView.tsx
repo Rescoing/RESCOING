@@ -7,6 +7,7 @@ import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc
 import { db } from '../lib/firebase';
 import { useAuth } from './FirebaseProvider';
 import { DocumentPreviewViewer } from './DocumentPreviewSystem';
+import { decompressFileGzip, compressFileGzip, compressImageUsingCanvas } from '../lib/compression';
 
 interface OperationsViewProps {
   autoOpen?: boolean;
@@ -321,10 +322,18 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
     return 'text/plain';
   };
 
-  const handleDownload = (docItem: any) => {
+  const handleDownload = async (docItem: any) => {
     if (!docItem.fileData) return;
+    let dataUrl = docItem.fileData;
+    if (docItem.isCompressed) {
+      try {
+        dataUrl = await decompressFileGzip(docItem.fileData, docItem.fileType || getFallbackMime(docItem.type));
+      } catch (err) {
+        console.error("Error decompressing file for download:", err);
+      }
+    }
     const link = document.createElement('a');
-    link.href = docItem.fileData;
+    link.href = dataUrl;
     link.download = docItem.name || docItem.fileName;
     document.body.appendChild(link);
     link.click();
@@ -335,26 +344,61 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
     const file = e.target.files?.[0];
     if (!file || !selectedProjectId) return;
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64Data = event.target?.result as string;
+    try {
+      let base64 = '';
+      let isCompressed = false;
       const fileExt = file.name.split('.').pop()?.toLowerCase() || 'file';
-      
+      const fileType = file.type || getFallbackMime(fileExt);
+
+      if (file.size > 350000) {
+        if (file.type.startsWith('image/') && !file.type.includes('gif') && !file.type.includes('svg')) {
+          try {
+            const res = await compressImageUsingCanvas(file, 350000);
+            base64 = res.base64;
+            isCompressed = false;
+          } catch (err) {
+            console.warn("Canvas image compression failed, falling back to gzip", err);
+            const res = await compressFileGzip(file);
+            base64 = res.base64;
+            isCompressed = true;
+          }
+        } else {
+          const res = await compressFileGzip(file);
+          base64 = res.base64;
+          isCompressed = true;
+        }
+      } else {
+        base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      if (base64.length > 950000) {
+        alert("El archivo es demasiado grande (supera el límite de Firestore de 1MB incluso tras compresión). Por favor, suba un archivo más pequeño.");
+        return;
+      }
+
       const newDoc: ProjectDocument = {
         id: Math.random().toString(36).substr(2, 9),
         name: file.name,
         type: fileExt,
         uploadDate: new Date().toLocaleDateString(),
         size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
-        fileData: base64Data,
-        fileType: file.type || getFallbackMime(fileExt)
+        fileData: base64,
+        fileType: fileType,
+        isCompressed: isCompressed
       };
 
       const projectRef = doc(db, 'projects', selectedProjectId);
       const updatedDocs = [...(selectedProject?.documents || []), newDoc];
       await updateDoc(projectRef, { documents: updatedDocs });
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+      console.error("Error processing operations file upload:", error);
+      alert("Error al procesar el archivo o subirlo.");
+    }
   };
 
   return (
@@ -761,7 +805,8 @@ export default function OperationsView({ autoOpen, onModalHandled, contacts }: O
                         name: docItem.name,
                         fileName: docItem.name,
                         fileType: docItem.fileType || docItem.type,
-                        fileData: docItem.fileData
+                        fileData: docItem.fileData,
+                        isCompressed: docItem.isCompressed
                       })}
                       className="p-1.5 hover:bg-slate-50 rounded-lg text-indigo-600 transition-colors" 
                       title="Ver Online"

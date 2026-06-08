@@ -48,6 +48,7 @@ export interface ProjectDocument {
   size: string;
   fileData?: string;
   fileType?: string;
+  isCompressed?: boolean;
 }
 
 export interface Project {
