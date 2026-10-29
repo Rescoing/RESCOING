@@ -97,12 +97,40 @@ export interface DocumentItem {
   refId?: string; // Reference to inventory item if material
 }
 
+export interface DocumentBankDetails {
+  bankName: string;
+  accountType: string;
+  accountNumber: string;
+  holderName: string;
+  holderRut: string;
+  paymentEmail: string;
+  notes?: string;
+}
+
+export interface DocumentCompanyInfo {
+  name: string;
+  rut: string;
+  address: string;
+  phone: string;
+  email: string;
+  website?: string;
+  giro?: string;
+}
+
 export interface Document {
   id: string;
   type: 'quotation' | 'purchase_order' | 'sales_note' | 'invoice' | 'payment_status';
   folio: string;
   clientId: string;
   clientName: string;
+  clientRut?: string;
+  clientAddress?: string;
+  clientPhone?: string;
+  clientEmail?: string;
+  clientContact?: string;
+  companyInfo?: DocumentCompanyInfo;
+  bankDetails?: DocumentBankDetails;
+  validityDays?: number;
   projectId?: string;
   projectType?: string;
   date: string;
@@ -115,6 +143,9 @@ export interface Document {
   siiFolio?: string;
   notes?: string;
   linkedDocId?: string; // Reference to previous document in flow
+  ownerId?: string;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 export interface FinanceTask {
