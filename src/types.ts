@@ -29,6 +29,9 @@ export interface Contact {
   address: string;
   email: string;
   status: 'customer' | 'opportunity' | 'lead';
+  notes?: string;
+  ownerId?: string;
+  createdAt?: any;
 }
 
 export interface ProjectTask {
