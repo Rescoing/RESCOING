@@ -27,6 +27,7 @@ import {
   Phone, 
   MapPin, 
   Calendar,
+  Briefcase,
   X
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
@@ -530,21 +531,55 @@ export default function DocumentsView({
       pdf.text(`Contacto / Fono:`, 120, 64);
       pdf.text(`${docItem.clientContact || docItem.clientPhone || 'No informado'}`, 148, 64);
 
-      pdf.text(`Proyecto:`, 120, 69);
-      pdf.text(`${docItem.projectType || 'General'}`, 148, 69);
+      pdf.text(`Validez Oferta:`, 120, 69);
+      pdf.text(`${docItem.validityDays || 15} días corridos`, 148, 69);
+
+      // Dedicated Project / Works Section (Full Width, dynamic height)
+      let currentY = 75;
+      if (docItem.projectType) {
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(226, 232, 240);
+        pdf.setLineWidth(0.3);
+
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+        const projectLines = pdf.splitTextToSize(docItem.projectType, 170);
+        const boxHeight = Math.max(14, (projectLines.length * 4.2) + 9);
+
+        pdf.rect(15, currentY, 180, boxHeight, 'F');
+        pdf.rect(15, currentY, 180, boxHeight);
+
+        // Accent line on left (primary color)
+        pdf.setFillColor(234, 88, 12);
+        pdf.rect(15, currentY, 2, boxHeight, 'F');
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(234, 88, 12);
+        pdf.text("PROYECTO / OBJETO DE LOS TRABAJOS A REALIZAR:", 20, currentY + 5);
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(8);
+        pdf.setTextColor(15, 23, 42);
+        pdf.text(projectLines, 20, currentY + 10);
+
+        currentY += boxHeight + 4;
+      } else {
+        currentY += 2;
+      }
 
       // Items Table
       pdf.setFillColor(15, 23, 42);
-      pdf.rect(15, 78, 180, 7, 'F');
+      pdf.rect(15, currentY, 180, 7, 'F');
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(8);
       pdf.setTextColor(255, 255, 255);
-      pdf.text("DESCRIPCIÓN DEL ÍTEM O SERVICIO", 18, 83);
-      pdf.text("CANT", 130, 83);
-      pdf.text("P. UNITARIO", 150, 83);
-      pdf.text("TOTAL", 180, 83);
+      pdf.text("DESCRIPCIÓN DEL ÍTEM O SERVICIO", 18, currentY + 5);
+      pdf.text("CANT", 130, currentY + 5);
+      pdf.text("P. UNITARIO", 150, currentY + 5);
+      pdf.text("TOTAL", 180, currentY + 5);
 
-      let currentY = 91;
+      currentY += 12;
       pdf.setFont("helvetica", "normal");
       pdf.setTextColor(30, 41, 59);
 
@@ -1060,47 +1095,63 @@ export default function DocumentsView({
                 </div>
               </div>
 
-              {/* Box 3: Document Metadata */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+              {/* Box 3: Proyecto y Objeto de los Trabajos (Ubicación Principal y Espacio Amplio) */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider">
+                    <Briefcase size={16} />
+                    <span>Proyecto / Objeto de los Trabajos a Realizar</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    Encabezado principal del documento
+                  </span>
+                </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tipo de Proyecto / Asunto</label>
-                  <input 
-                    type="text" 
-                    placeholder="Ej: Montaje Tableros, Mantención..."
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-primary/20 text-sm bg-white"
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Descripción Completa de las Obras, Faenas o Servicios a Realizar
+                  </label>
+                  <textarea 
+                    rows={2}
+                    placeholder="Ej: Instalación eléctrica Galpones, tendido de alimentadores, montaje de tableros generales, canalizaciones y certificación SEC..."
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-primary/20 text-sm font-medium bg-white text-slate-900 resize-y"
                     value={newDoc.projectType || ''}
                     onChange={e => setNewDoc({...newDoc, projectType: e.target.value})}
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Este texto se mostrará destacado de forma completa en el documento oficial y en el PDF exportado.
+                  </p>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Estado del Documento</label>
-                  <select 
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-primary/20 text-sm bg-white"
-                    value={newDoc.status || 'draft'}
-                    onChange={e => setNewDoc({...newDoc, status: e.target.value as any})}
-                  >
-                    <option value="draft">Borrador</option>
-                    <option value="sent">Enviado al Cliente</option>
-                    <option value="approved">Aprobado / Emitido</option>
-                    <option value="pending">Pendiente de Aprobación</option>
-                    <option value="paid">Pagado</option>
-                    <option value="rejected">Rechazado</option>
-                  </select>
-                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 border-t border-slate-200/70">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Estado del Documento</label>
+                    <select 
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-primary/20 text-sm bg-white"
+                      value={newDoc.status || 'draft'}
+                      onChange={e => setNewDoc({...newDoc, status: e.target.value as any})}
+                    >
+                      <option value="draft">Borrador</option>
+                      <option value="sent">Enviado al Cliente</option>
+                      <option value="approved">Aprobado / Emitido</option>
+                      <option value="pending">Pendiente de Aprobación</option>
+                      <option value="paid">Pagado</option>
+                      <option value="rejected">Rechazado</option>
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Validez de la Oferta</label>
-                  <select 
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-primary/20 text-sm bg-white"
-                    value={newDoc.validityDays || 15}
-                    onChange={e => setNewDoc({...newDoc, validityDays: parseInt(e.target.value) || 15})}
-                  >
-                    <option value={7}>7 días corridos</option>
-                    <option value={15}>15 días corridos</option>
-                    <option value={30}>30 días corridos</option>
-                    <option value={60}>60 días corridos</option>
-                  </select>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Validez de la Oferta</label>
+                    <select 
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-primary/20 text-sm bg-white"
+                      value={newDoc.validityDays || 15}
+                      onChange={e => setNewDoc({...newDoc, validityDays: parseInt(e.target.value) || 15})}
+                    >
+                      <option value={7}>7 días corridos</option>
+                      <option value={15}>15 días corridos</option>
+                      <option value={30}>30 días corridos</option>
+                      <option value={60}>60 días corridos</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -1417,6 +1468,13 @@ export default function DocumentsView({
                   </div>
                 </div>
 
+                {newDoc.projectType && (
+                  <div className="mt-3 p-3 bg-white border border-slate-200 rounded-lg text-xs space-y-1">
+                    <span className="text-[9px] font-bold text-primary uppercase block">Proyecto / Obras a Realizar:</span>
+                    <p className="font-bold text-slate-800 leading-snug whitespace-pre-wrap">{newDoc.projectType}</p>
+                  </div>
+                )}
+
                 <div className="mt-3 p-3 bg-emerald-50/70 border border-emerald-200 rounded-lg text-xs">
                   <span className="text-[9px] font-bold text-emerald-800 uppercase block mb-1">Cuenta para Pagos Configurada:</span>
                   <p className="font-semibold text-emerald-900">
@@ -1577,17 +1635,33 @@ export default function DocumentsView({
                         <span className="text-slate-700 font-bold">{viewingDoc.date}</span>
                       </div>
                       <div>
+                        <span className="text-slate-400 font-semibold block uppercase text-[9px] tracking-wider leading-none">Contacto / Fono:</span>
+                        <span className="text-slate-700 font-medium">{viewingDoc.clientContact || viewingDoc.clientPhone || 'No informado'}</span>
+                      </div>
+                      <div>
                         <span className="text-slate-400 font-semibold block uppercase text-[9px] tracking-wider leading-none">Validez de la Oferta:</span>
                         <span className="text-slate-700 font-medium">{viewingDoc.validityDays || 15} días corridos</span>
                       </div>
-                      {viewingDoc.projectType && (
-                        <div>
-                          <span className="text-slate-400 font-semibold block uppercase text-[9px] tracking-wider leading-none">Proyecto:</span>
-                          <span className="text-slate-800 font-bold">{viewingDoc.projectType}</span>
-                        </div>
-                      )}
                     </div>
                   </div>
+
+                  {/* PROYECTO / ALCANCE DE LOS TRABAJOS A REALIZAR (UBICACIÓN PRINCIPAL DESTACADA) */}
+                  {viewingDoc.projectType && (
+                    <div className="p-4 bg-gradient-to-r from-amber-50/60 via-slate-50 to-primary/5 border-l-4 border-primary border-y border-r border-slate-200 rounded-xl shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider">
+                          <Briefcase size={16} />
+                          <span>Proyecto / Objeto de los Trabajos y Obras a Realizar</span>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary px-2.5 py-0.5 rounded-full">
+                          Alcance del Servicio
+                        </span>
+                      </div>
+                      <p className="text-slate-900 font-bold text-sm md:text-base leading-relaxed whitespace-pre-wrap pt-0.5">
+                        {viewingDoc.projectType}
+                      </p>
+                    </div>
+                  )}
 
                   {/* Items list Table */}
                   <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white">
