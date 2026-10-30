@@ -21,11 +21,16 @@ import {
   Check, 
   Loader2,
   Share2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Eye,
+  Download,
+  Printer
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Contact, Document, Project } from '../types';
 import Modal from './ui/Modal';
+import DocumentOfficialModal from './DocumentOfficialModal';
+import { generateDocumentPDF } from '../utils/documentPdf';
 import { 
   collection, 
   query, 
@@ -57,6 +62,7 @@ export default function CRMView({ autoOpen, onModalHandled }: CRMViewProps) {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileTab, setProfileTab] = useState<'ficha' | 'documentos' | 'proyectos' | 'editar'>('ficha');
+  const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
   
   // Commercial documents and projects linked to selected contact
   const [allDocuments, setAllDocuments] = useState<Document[]>([]);
@@ -286,11 +292,22 @@ export default function CRMView({ autoOpen, onModalHandled }: CRMViewProps) {
   });
 
   // Client related documents
-  const clientDocuments = selectedContact ? allDocuments.filter(d => 
-    d.clientId === selectedContact.id ||
-    d.clientName?.toLowerCase() === selectedContact.company?.toLowerCase() ||
-    d.clientName?.toLowerCase() === selectedContact.name?.toLowerCase()
-  ) : [];
+  const clientDocuments = selectedContact ? allDocuments.filter(d => {
+    if (d.clientId && d.clientId === selectedContact.id) return true;
+    if (d.clientName && selectedContact.company && d.clientName.trim().toLowerCase() === selectedContact.company.trim().toLowerCase()) return true;
+    if (d.clientName && selectedContact.name && d.clientName.trim().toLowerCase() === selectedContact.name.trim().toLowerCase()) return true;
+    if (d.clientContact && selectedContact.name && d.clientContact.trim().toLowerCase() === selectedContact.name.trim().toLowerCase()) return true;
+    
+    // Also match by RUT digits
+    const contactRutEmpresa = (selectedContact.rutEmpresa || '').replace(/[^0-9kK]/g, '').toLowerCase();
+    const contactRutContacto = (selectedContact.rutContacto || '').replace(/[^0-9kK]/g, '').toLowerCase();
+    const docRut = (d.clientRut || '').replace(/[^0-9kK]/g, '').toLowerCase();
+    
+    if (docRut && contactRutEmpresa && docRut === contactRutEmpresa) return true;
+    if (docRut && contactRutContacto && docRut === contactRutContacto) return true;
+    
+    return false;
+  }) : [];
 
   const totalDocumentsAmount = clientDocuments.reduce((sum, d) => sum + (d.totalAmount || 0), 0);
 
@@ -821,6 +838,7 @@ export default function CRMView({ autoOpen, onModalHandled }: CRMViewProps) {
                           <th className="px-4 py-3">Fecha</th>
                           <th className="px-4 py-3 text-right">Monto Total</th>
                           <th className="px-4 py-3 text-center">Estado</th>
+                          <th className="px-4 py-3 text-right">Acciones</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -832,8 +850,18 @@ export default function CRMView({ autoOpen, onModalHandled }: CRMViewProps) {
                             docItem.type === 'invoice' ? 'Factura' : 'Estado de Pago';
                           
                           return (
-                            <tr key={docItem.id} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="px-4 py-3 font-mono font-bold text-slate-900">{docItem.folio || docItem.id.slice(0, 8)}</td>
+                            <tr key={docItem.id} className="hover:bg-slate-50/80 transition-colors group">
+                              <td className="px-4 py-3">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingDoc(docItem)}
+                                  className="font-mono font-bold text-primary hover:underline flex items-center gap-1.5 cursor-pointer text-left"
+                                  title="Ver documento oficial"
+                                >
+                                  <span>{docItem.folio || docItem.id.slice(0, 8)}</span>
+                                  <Eye size={12} className="opacity-0 group-hover:opacity-100 transition-opacity text-primary shrink-0" />
+                                </button>
+                              </td>
                               <td className="px-4 py-3 font-medium text-slate-700">{typeLabel}</td>
                               <td className="px-4 py-3 text-slate-500">{docItem.date}</td>
                               <td className="px-4 py-3 text-right font-mono font-bold text-slate-900">
@@ -849,6 +877,28 @@ export default function CRMView({ autoOpen, onModalHandled }: CRMViewProps) {
                                 }`}>
                                   {docItem.status || 'Pendiente'}
                                 </span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setViewingDoc(docItem)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800 border border-blue-200/80 text-[11px] font-bold transition-all shadow-2xs cursor-pointer group/btn"
+                                    title="Visualizar documento oficial con desglose completo"
+                                  >
+                                    <Eye size={13} className="text-blue-600 group-hover/btn:scale-110 transition-transform" />
+                                    <span>Ver</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => generateDocumentPDF(docItem)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800 border border-amber-200/80 text-[11px] font-bold transition-all shadow-2xs cursor-pointer group/btn"
+                                    title="Descargar documento en PDF"
+                                  >
+                                    <Download size={13} className="text-amber-600 group-hover/btn:scale-110 transition-transform" />
+                                    <span>Descargar</span>
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -1033,6 +1083,13 @@ export default function CRMView({ autoOpen, onModalHandled }: CRMViewProps) {
           </div>
         )}
       </Modal>
+
+      {/* Official Document Viewer Modal with PDF Download and Print */}
+      <DocumentOfficialModal
+        isOpen={Boolean(viewingDoc)}
+        onClose={() => setViewingDoc(null)}
+        document={viewingDoc}
+      />
     </div>
   );
 }
